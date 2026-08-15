@@ -61,6 +61,7 @@ export function ProfileForm({ profile, submitLabel, onSuccess }: Props) {
 
   const classId = watch("class_id");
   const requiresStream = watch("requires_stream");
+  const academicLocked = Boolean(profile.academic_locked);
 
   const selectedClass = useMemo(
     () => classesQuery.data?.find((item) => item.id === classId),
@@ -93,14 +94,21 @@ export function ProfileForm({ profile, submitLabel, onSuccess }: Props) {
   const onSubmit = handleSubmit(async (values) => {
     setLocalError(null);
     try {
-      const updated = await updateMutation.mutateAsync({
-        full_name: values.full_name,
-        mobile: values.mobile,
-        board_id: values.board_id,
-        class_id: values.class_id,
-        stream_id: values.requires_stream ? values.stream_id || undefined : undefined,
-        clear_stream: !values.requires_stream,
-      });
+      const updated = await updateMutation.mutateAsync(
+        academicLocked
+          ? {
+              full_name: values.full_name,
+              mobile: values.mobile,
+            }
+          : {
+              full_name: values.full_name,
+              mobile: values.mobile,
+              board_id: values.board_id,
+              class_id: values.class_id,
+              stream_id: values.requires_stream ? values.stream_id || undefined : undefined,
+              clear_stream: !values.requires_stream,
+            },
+      );
       onSuccess?.(updated);
     } catch (error) {
       setLocalError(getProfileErrorMessage(error));
@@ -178,32 +186,51 @@ export function ProfileForm({ profile, submitLabel, onSuccess }: Props) {
 
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Board" error={errors.board_id?.message}>
-          <select className={inputClass} {...register("board_id")}>
-            <option value="">Select board</option>
-            {boardsQuery.data?.map((board) => (
-              <option key={board.id} value={board.id}>
-                {board.name}
-              </option>
-            ))}
-          </select>
+          {academicLocked ? (
+            <LockedValue value={profile.board?.name ?? "—"} />
+          ) : (
+            <select className={inputClass} {...register("board_id")}>
+              <option value="">Select board</option>
+              {boardsQuery.data?.map((board) => (
+                <option key={board.id} value={board.id}>
+                  {board.name}
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
         <Field label="Class" error={errors.class_id?.message}>
-          <select
-            className={inputClass}
-            value={classId}
-            onChange={(e) => onClassChange(e.target.value)}
-          >
-            <option value="">Select class</option>
-            {classesQuery.data?.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
+          {academicLocked ? (
+            <LockedValue value={profile.school_class?.name ?? "—"} />
+          ) : (
+            <select
+              className={inputClass}
+              value={classId}
+              onChange={(e) => onClassChange(e.target.value)}
+            >
+              <option value="">Select class</option>
+              {classesQuery.data?.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
       </div>
 
-      {requiresStream || selectedClass?.requires_stream ? (
+      {academicLocked ? (
+        <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Board, class, and stream are locked after setup so syllabus progress
+          stays accurate. Use Switch Account for a different class or stream
+          (same email, different password).
+          {profile.school_class?.requires_stream ? (
+            <> Stream: {profile.stream?.name ?? "—"}.</>
+          ) : (
+            <> Stream is not required for this class.</>
+          )}
+        </p>
+      ) : requiresStream || selectedClass?.requires_stream ? (
         <Field label="Stream" error={errors.stream_id?.message}>
           <select className={inputClass} {...register("stream_id")}>
             <option value="">Select stream</option>
@@ -234,6 +261,14 @@ export function ProfileForm({ profile, submitLabel, onSuccess }: Props) {
         {updateMutation.isPending ? "Saving..." : submitLabel}
       </button>
     </form>
+  );
+}
+
+function LockedValue({ value }: { value: string }) {
+  return (
+    <p className="flex h-11 items-center rounded-xl border border-border bg-muted/50 px-3 text-sm">
+      {value}
+    </p>
   );
 }
 

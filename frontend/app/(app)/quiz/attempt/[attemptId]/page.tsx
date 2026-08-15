@@ -34,6 +34,7 @@ export default function QuizAttemptPage() {
   completeMutationRef.current = completeMutation;
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [answeredCorrect, setAnsweredCorrect] = useState<boolean | null>(null);
+  const [correctOptionId, setCorrectOptionId] = useState<string | null>(null);
 
   const secondsRemaining = useQuizCountdown(
     attemptQuery.data?.expires_at,
@@ -51,11 +52,23 @@ export default function QuizAttemptPage() {
   useEffect(() => {
     if (questionQuery.data?.selected_option_id) {
       setSelectedOptionId(questionQuery.data.selected_option_id);
+      if (questionQuery.data.correct_option_id) {
+        setCorrectOptionId(questionQuery.data.correct_option_id);
+        setAnsweredCorrect(
+          questionQuery.data.selected_option_id ===
+            questionQuery.data.correct_option_id,
+        );
+      }
     } else {
       setSelectedOptionId(null);
       setAnsweredCorrect(null);
+      setCorrectOptionId(null);
     }
-  }, [questionQuery.data?.id, questionQuery.data?.selected_option_id]);
+  }, [
+    questionQuery.data?.id,
+    questionQuery.data?.selected_option_id,
+    questionQuery.data?.correct_option_id,
+  ]);
 
   if (attemptQuery.isLoading) {
     return (
@@ -198,6 +211,9 @@ export default function QuizAttemptPage() {
           <ul className="mt-5 space-y-2">
             {question.options.map((option) => {
               const selected = selectedOptionId === option.id;
+              const revealed = alreadyAnswered && Boolean(correctOptionId);
+              const isCorrectChoice = revealed && option.id === correctOptionId;
+              const isWrongChoice = revealed && selected && !isCorrectChoice;
               return (
                 <li key={option.id}>
                   <button
@@ -206,10 +222,20 @@ export default function QuizAttemptPage() {
                     onClick={() => setSelectedOptionId(option.id)}
                     className={cn(
                       "w-full rounded-2xl border px-4 py-3 text-left text-sm transition",
-                      selected
-                        ? "border-primary bg-primary/15 font-medium"
-                        : "border-border bg-background hover:border-primary/40",
-                      alreadyAnswered && !selected && "opacity-60",
+                      !revealed &&
+                        selected &&
+                        "border-foreground/40 bg-muted font-medium",
+                      !revealed &&
+                        !selected &&
+                        "border-border bg-background hover:border-primary/40",
+                      isCorrectChoice &&
+                        "border-emerald-600 bg-emerald-500/15 font-medium text-emerald-800 dark:text-emerald-300",
+                      isWrongChoice &&
+                        "border-destructive bg-destructive/15 font-medium text-destructive",
+                      revealed &&
+                        !isCorrectChoice &&
+                        !isWrongChoice &&
+                        "opacity-60",
                     )}
                   >
                     {option.text}
@@ -223,10 +249,12 @@ export default function QuizAttemptPage() {
             <p
               className={cn(
                 "mt-4 text-sm font-medium",
-                answeredCorrect ? "text-primary" : "text-destructive",
+                answeredCorrect ? "text-emerald-700 dark:text-emerald-300" : "text-destructive",
               )}
             >
-              {answeredCorrect ? "Correct!" : "Not quite — keep going."}
+              {answeredCorrect
+                ? "Correct!"
+                : "Incorrect — the correct answer is highlighted in green."}
             </p>
           ) : null}
         </motion.div>
@@ -240,6 +268,9 @@ export default function QuizAttemptPage() {
                 if (!selectedOptionId) return;
                 const res = await submitMutation.mutateAsync(selectedOptionId);
                 setAnsweredCorrect(res.is_correct);
+                if (res.correct_option_id) {
+                  setCorrectOptionId(res.correct_option_id);
+                }
               }}
               className="rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
             >

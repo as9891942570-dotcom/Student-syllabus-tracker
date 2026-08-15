@@ -59,16 +59,52 @@ async def test_register_and_login(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_register_duplicate_email(db_session: AsyncSession) -> None:
+async def test_register_same_email_different_password(db_session: AsyncSession) -> None:
     service = AuthService(db_session)
-    payload = RegisterRequest(
-        email="dup@example.com",
-        password="Secret123!",
-        full_name="Dup User",
+    first = await service.register(
+        RegisterRequest(
+            email="dup@example.com",
+            password="Secret123!",
+            full_name="Account A",
+        ),
     )
-    await service.register(payload)
+    second = await service.register(
+        RegisterRequest(
+            email="dup@example.com",
+            password="Secret456!",
+            full_name="Account B",
+        ),
+    )
+    assert first.user.id != second.user.id
+    assert first.user.email == second.user.email
+
     with pytest.raises(ConflictError):
-        await service.register(payload)
+        await service.register(
+            RegisterRequest(
+                email="dup@example.com",
+                password="Secret123!",
+                full_name="Account A again",
+            ),
+        )
+
+    login_a = await service.login(
+        LoginRequest(email="dup@example.com", password="Secret123!"),
+    )
+    login_b = await service.login(
+        LoginRequest(email="dup@example.com", password="Secret456!"),
+    )
+    assert login_a.user.id == first.user.id
+    assert login_b.user.id == second.user.id
+
+    by_id = await service.login(
+        LoginRequest(user_id=first.user.id, password="Secret123!"),
+    )
+    assert by_id.user.id == first.user.id
+
+    with pytest.raises(UnauthorizedError):
+        await service.login(
+            LoginRequest(user_id=first.user.id, password="Secret456!"),
+        )
 
 
 @pytest.mark.asyncio

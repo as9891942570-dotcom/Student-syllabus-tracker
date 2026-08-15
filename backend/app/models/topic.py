@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, String, Uuid
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -27,6 +27,12 @@ class Topic(Base):
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    curriculum_version: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="CBSE 2026-27",
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     chapter: Mapped[Chapter] = relationship("Chapter", back_populates="topics")
     progress_rows: Mapped[list[StudentTopicProgress]] = relationship(

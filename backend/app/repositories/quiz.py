@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -115,6 +115,25 @@ class QuizAttemptRepository(BaseRepository[QuizAttempt]):
             .limit(limit),
         )
         return list(result.scalars().unique().all())
+
+    async def has_prior_xp_for_quiz(
+        self,
+        user_id: UUID,
+        quiz_id: UUID,
+        *,
+        exclude_attempt_id: UUID | None = None,
+    ) -> bool:
+        """True if the student already earned XP from a finished attempt on this quiz."""
+        stmt = select(func.count()).select_from(QuizAttempt).where(
+            QuizAttempt.user_id == user_id,
+            QuizAttempt.quiz_id == quiz_id,
+            QuizAttempt.status.in_(("completed", "expired")),
+            QuizAttempt.xp_earned > 0,
+        )
+        if exclude_attempt_id is not None:
+            stmt = stmt.where(QuizAttempt.id != exclude_attempt_id)
+        result = await self.session.execute(stmt)
+        return int(result.scalar_one()) > 0
 
 
 class QuizAnswerRepository(BaseRepository[QuizAnswer]):

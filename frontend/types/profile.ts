@@ -28,8 +28,16 @@ export type Profile = {
   school_class: SchoolClass | null;
   stream: Stream | null;
   total_xp: number;
+  total_coins: number;
+  level: number;
+  level_floor_xp: number;
+  next_level_xp: number;
+  xp_into_level: number;
+  xp_needed_for_next: number;
+  level_progress_percentage: number;
   completion_percentage: number;
   is_complete: boolean;
+  academic_locked?: boolean;
   missing_fields: string[];
   created_at: string;
   updated_at: string;

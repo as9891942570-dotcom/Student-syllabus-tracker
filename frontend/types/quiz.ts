@@ -36,6 +36,7 @@ export type QuizQuestion = {
   options: QuizOption[];
   already_answered: boolean;
   selected_option_id?: string | null;
+  correct_option_id?: string | null;
 };
 
 export type QuizAttempt = {
@@ -58,7 +59,18 @@ export type QuizAttempt = {
   percentage: number;
   xp_earned: number;
   total_xp: number;
+  coins_earned?: number;
+  total_coins?: number;
   topic_completed: boolean;
+  next_topic_unlocked?: boolean;
+  next_topic_id?: string | null;
+  next_topic_title?: string | null;
+  xp_awarded?: boolean;
+  coins_awarded?: boolean;
+  level?: number;
+  level_floor_xp?: number;
+  next_level_xp?: number;
+  level_progress_percentage?: number;
   started_at: string;
   expires_at: string;
   ended_at?: string | null;
@@ -69,6 +81,7 @@ export type SubmitAnswerResponse = {
   question_id: string;
   selected_option_id: string;
   is_correct: boolean;
+  correct_option_id?: string;
   attempt_id: string;
   answered_count: number;
   correct_count: number;

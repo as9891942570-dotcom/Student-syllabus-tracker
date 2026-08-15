@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class RegisterRequest(BaseModel):
@@ -14,8 +14,15 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    user_id: Optional[UUID] = None
     password: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def require_identity(self) -> "LoginRequest":
+        if self.user_id is None and not self.email:
+            raise ValueError("Email or saved account is required")
+        return self
 
 
 class RefreshRequest(BaseModel):

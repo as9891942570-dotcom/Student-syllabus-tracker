@@ -12,7 +12,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setReady(true);
+    const finish = () => setReady(true);
+    if (useAuthStore.persist.hasHydrated()) {
+      finish();
+      return;
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(finish);
+    return () => {
+      unsub();
+    };
   }, []);
 
   useEffect(() => {

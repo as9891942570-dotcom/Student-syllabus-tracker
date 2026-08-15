@@ -1,7 +1,7 @@
-"""Minimal quiz seed data for verifying Phase 6.
+"""Topic quiz seeding — original questions bound to each topic (max 20).
 
-Keeps educational content tiny and easy to extend later.
-Questions are topic-specific tracking quizzes — not teaching content.
+Reuses the Phase 6 Quiz / QuizQuestion / QuizOption models.
+Does not create a second quiz system and does not depend on study sessions.
 """
 
 from __future__ import annotations
@@ -16,179 +16,116 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.models.quiz import Quiz
 from app.models.quiz_option import QuizOption
 from app.models.quiz_question import QuizQuestion
+from app.models.topic import Topic
+from app.services.topic_quiz_builder import (
+    MAX_QUESTIONS_PER_TOPIC,
+    QuestionBank,
+    build_topic_questions,
+    is_meta_question,
+)
 
-QuestionBank = list[tuple[str, list[tuple[str, bool]]]]
+# Re-export for tests and callers.
+__all__ = [
+    "MAX_QUESTIONS_PER_TOPIC",
+    "LEGACY_PROMPT_FRAGMENTS",
+    "contains_legacy_prompt",
+    "questions_for_topic",
+    "ensure_quiz_for_topic",
+    "ensure_quiz_has_questions",
+    "refresh_all_topic_quizzes",
+    "ensure_quizzes_for_all_active_topics",
+]
 
-# Old Phase 6 placeholders — must never appear in seeded quizzes.
+# Fragments that identify bad/legacy/meta prompts (must never remain active).
 LEGACY_PROMPT_FRAGMENTS: tuple[str, ...] = (
     "EduQuest",
     "syllabus progress",
     "XP be awarded",
     "tracking a topic as complete",
+    "Which approach best helps you review",
+    "What should you focus on while studying",
+    "ready to mark as progress",
+    "While studying",
+    "what should a student primarily focus on",
+    "best describes",
+    "definitions, relations, and applications",
+    "Which chapter contains the topic",
+    "stays on-topic for",
+    "avoid other topics",
+    "progress should reflect",
+    "mark progress on",
+    "unlock the next topic",
+    "Ideas and methods used to understand",
+    "belongs under which chapter context",
 )
 
-# Topic-title keyed banks (normalized lowercase). Exactly 3 questions each.
-TOPIC_QUESTION_BANKS: dict[str, QuestionBank] = {
-    "ancient": [
-        (
-            "Which ancient civilization is known for carefully planned cities like Harappa and Mohenjo-daro?",
-            [
-                ("Indus Valley Civilization", True),
-                ("Roman Empire", False),
-                ("Ottoman Empire", False),
-                ("Vijayanagara Empire", False),
-            ],
-        ),
-        (
-            "Ashoka is most closely associated with which ancient Indian empire?",
-            [
-                ("Maurya Empire", True),
-                ("Mughal Empire", False),
-                ("British Empire", False),
-                ("Gupta trading companies", False),
-            ],
-        ),
-        (
-            "The Vedas are sacred texts that belong mainly to which historical period?",
-            [
-                ("Ancient India", True),
-                ("Medieval Europe", False),
-                ("Modern industrial age", False),
-                ("Contemporary digital age", False),
-            ],
-        ),
-    ],
-    "medieval": [
-        (
-            "Which period in Indian history is most associated with the Delhi Sultanate?",
-            [
-                ("Medieval period", True),
-                ("Ancient Indus age", False),
-                ("Modern industrial period", False),
-                ("Prehistoric stone age", False),
-            ],
-        ),
-        (
-            "Akbar was a famous ruler of which medieval dynasty?",
-            [
-                ("Mughal dynasty", True),
-                ("Maurya dynasty", False),
-                ("Chola maritime guilds only", False),
-                ("British East India Company", False),
-            ],
-        ),
-        (
-            "The Bhakti and Sufi traditions grew especially strong during which era?",
-            [
-                ("Medieval India", True),
-                ("Only after Indian Independence", False),
-                ("Only in the Indus Valley cities", False),
-                ("Only in the Space Age", False),
-            ],
-        ),
-    ],
-    "modern overview": [
-        (
-            "The Revolt of 1857 is an important event of which historical period?",
-            [
-                ("Modern Indian history", True),
-                ("Indus Valley period", False),
-                ("Early Vedic period only", False),
-                ("Prehistoric cave art period", False),
-            ],
-        ),
-        (
-            "The Indian National Congress was founded in which century?",
-            [
-                ("19th century", True),
-                ("5th century BCE", False),
-                ("12th century", False),
-                ("21st century only", False),
-            ],
-        ),
-        (
-            "India gained independence from British rule in which year?",
-            [
-                ("1947", True),
-                ("1857", False),
-                ("1526", False),
-                ("320 BCE", False),
-            ],
-        ),
-    ],
-}
-
-
-def normalize_topic_key(topic_title: str) -> str:
-    return " ".join(topic_title.strip().lower().split())
-
-
-def _default_questions_for_topic(topic_title: str) -> QuestionBank:
-    """Small non-app fallback for topics without a dedicated history bank."""
-    title = topic_title.strip() or "this topic"
-    return [
-        (
-            f"Which approach best helps you review \"{title}\"?",
-            [
-                ("Recall the main ideas listed in the topic outline", True),
-                ("Skip the outline and study unrelated subjects only", False),
-                ("Replace the topic with unrelated game rules", False),
-                ("Ignore the checklist items completely", False),
-            ],
-        ),
-        (
-            f"What should you focus on while studying \"{title}\"?",
-            [
-                ("Key concepts and checklist items for the topic", True),
-                ("Unrelated entertainment trivia", False),
-                ("Topics from a different subject only", False),
-                ("Skipping every outline item", False),
-            ],
-        ),
-        (
-            f"When is \"{title}\" ready to mark as progress?",
-            [
-                ("After you have reviewed the topic outline items", True),
-                ("Before opening the topic at all", False),
-                ("Only after finishing every other subject first", False),
-                ("Never - progress tracking is unused", False),
-            ],
-        ),
-    ]
-
-
-def questions_for_topic(topic_title: str) -> QuestionBank:
-    key = normalize_topic_key(topic_title)
-    bank = TOPIC_QUESTION_BANKS.get(key)
-    if bank is not None:
-        return bank
-    return _default_questions_for_topic(topic_title)
+SECONDS_PER_QUESTION = 45
 
 
 def contains_legacy_prompt(prompt: str) -> bool:
+    if is_meta_question(prompt):
+        return True
     lowered = prompt.lower()
     return any(fragment.lower() in lowered for fragment in LEGACY_PROMPT_FRAGMENTS)
 
 
-def quiz_needs_content_refresh(quiz: Quiz, topic_title: str) -> bool:
-    """True when questions are missing, legacy, or out of date for a known topic bank."""
-    if len(quiz.questions) == 0:
-        return True
+def questions_for_topic(
+    topic_title: str,
+    *,
+    chapter_title: str = "",
+    subject_code: str = "GEN",
+    grade: int = 10,
+) -> QuestionBank:
+    return build_topic_questions(
+        topic_title=topic_title,
+        chapter_title=chapter_title or topic_title,
+        subject_code=subject_code,
+        grade=grade,
+    )
+
+
+def quiz_time_limit_seconds(question_count: int) -> int:
+    return max(180, min(question_count, MAX_QUESTIONS_PER_TOPIC) * SECONDS_PER_QUESTION)
+
+
+def quiz_needs_content_refresh(
+    quiz: Quiz,
+    topic_title: str,
+    *,
+    chapter_title: str,
+    subject_code: str,
+    grade: int,
+) -> bool:
+    """True when questions are missing, meta/legacy, or out of date for the topic."""
     if any(contains_legacy_prompt(q.prompt) for q in quiz.questions):
         return True
+    if any(is_meta_question(q.prompt) for q in quiz.questions):
+        return True
+    if len(quiz.questions) > MAX_QUESTIONS_PER_TOPIC:
+        return True
 
-    key = normalize_topic_key(topic_title)
-    if key not in TOPIC_QUESTION_BANKS:
-        return False
-
-    expected = [prompt for prompt, _ in questions_for_topic(topic_title)]
+    expected = [
+        prompt
+        for prompt, _ in questions_for_topic(
+            topic_title,
+            chapter_title=chapter_title,
+            subject_code=subject_code,
+            grade=grade,
+        )
+    ]
     current = [q.prompt for q in sorted(quiz.questions, key=lambda item: item.sort_order)]
+    # Empty expected means unmapped topic — clear any leftover filler.
+    if not expected:
+        return len(current) > 0
+    if len(quiz.questions) == 0:
+        return True
     return current != expected
 
 
-def _add_sample_questions(quiz: Quiz, topic_title: str) -> None:
-    """Attach 3 MCQs via the relationship so the collection stays consistent."""
-    for q_index, (prompt, options) in enumerate(questions_for_topic(topic_title)):
+def _add_questions(quiz: Quiz, bank: QuestionBank) -> None:
+    if len(bank) > MAX_QUESTIONS_PER_TOPIC:
+        bank = bank[:MAX_QUESTIONS_PER_TOPIC]
+    for q_index, (prompt, options) in enumerate(bank):
         question = QuizQuestion(prompt=prompt, sort_order=q_index)
         quiz.questions.append(question)
         correct_count = sum(1 for _, is_correct in options if is_correct)
@@ -206,21 +143,63 @@ def _add_sample_questions(quiz: Quiz, topic_title: str) -> None:
             )
 
 
+async def _load_topic_context(
+    session: AsyncSession,
+    topic_id: UUID,
+) -> tuple[str, str, str, int]:
+    from app.models.chapter import Chapter
+    from app.models.school_class import SchoolClass
+    from app.models.subject import Subject
+
+    result = await session.execute(
+        select(Topic, Chapter, Subject, SchoolClass)
+        .join(Chapter, Topic.chapter_id == Chapter.id)
+        .join(Subject, Chapter.subject_id == Subject.id)
+        .join(SchoolClass, Subject.class_id == SchoolClass.id)
+        .where(Topic.id == topic_id),
+    )
+    row = result.first()
+    if row is None:
+        return "Topic", "Chapter", "GEN", 10
+    topic, chapter, subject, school_class = row
+    return topic.title, chapter.title, subject.code, school_class.grade
+
+
 async def _replace_quiz_questions(
     session: AsyncSession,
     quiz: Quiz,
+    *,
     topic_title: str,
+    chapter_title: str,
+    subject_code: str,
+    grade: int,
 ) -> None:
     for question in list(quiz.questions):
         await session.delete(question)
     await session.flush()
     set_committed_value(quiz, "questions", [])
-    _add_sample_questions(quiz, topic_title)
+    bank = questions_for_topic(
+        topic_title,
+        chapter_title=chapter_title,
+        subject_code=subject_code,
+        grade=grade,
+    )
+    _add_questions(quiz, bank)
+    quiz.time_limit_seconds = quiz_time_limit_seconds(len(bank))
+    quiz.title = f"{topic_title} Challenge"
     await session.flush()
 
 
-async def ensure_quiz_for_topic(session: AsyncSession, topic_id: UUID, topic_title: str) -> Quiz:
-    """Create one active quiz with 3 MCQs if the topic has none; refresh legacy content."""
+async def ensure_quiz_for_topic(
+    session: AsyncSession,
+    topic_id: UUID,
+    topic_title: str | None = None,
+) -> Quiz:
+    """Create/refresh one active quiz with up to 20 topic-specific MCQs."""
+    title, chapter_title, subject_code, grade = await _load_topic_context(session, topic_id)
+    if topic_title:
+        title = topic_title
+
     result = await session.execute(
         select(Quiz)
         .where(Quiz.topic_id == topic_id, Quiz.is_active.is_(True))
@@ -231,20 +210,52 @@ async def ensure_quiz_for_topic(session: AsyncSession, topic_id: UUID, topic_tit
     quiz = result.scalar_one_or_none()
 
     if quiz is not None:
-        if quiz_needs_content_refresh(quiz, topic_title):
-            await _replace_quiz_questions(session, quiz, topic_title)
+        if quiz_needs_content_refresh(
+            quiz,
+            title,
+            chapter_title=chapter_title,
+            subject_code=subject_code,
+            grade=grade,
+        ):
+            await _replace_quiz_questions(
+                session,
+                quiz,
+                topic_title=title,
+                chapter_title=chapter_title,
+                subject_code=subject_code,
+                grade=grade,
+            )
+            if not quiz.questions:
+                quiz.is_active = False
         return quiz
 
-    # Append questions before flush so async code never triggers a lazy load.
+    bank = questions_for_topic(
+        title,
+        chapter_title=chapter_title,
+        subject_code=subject_code,
+        grade=grade,
+    )
+    if not bank:
+        # Do not persist empty filler quizzes for unmapped topics.
+        quiz = Quiz(
+            topic_id=topic_id,
+            title=f"{title} Challenge",
+            time_limit_seconds=quiz_time_limit_seconds(0),
+            is_active=False,
+            sort_order=0,
+        )
+        set_committed_value(quiz, "questions", [])
+        return quiz
+
     quiz = Quiz(
         topic_id=topic_id,
-        title=f"{topic_title} Challenge",
-        time_limit_seconds=180,
+        title=f"{title} Challenge",
+        time_limit_seconds=quiz_time_limit_seconds(len(bank)),
         is_active=True,
         sort_order=0,
     )
     set_committed_value(quiz, "questions", [])
-    _add_sample_questions(quiz, topic_title)
+    _add_questions(quiz, bank)
     session.add(quiz)
     await session.flush()
     return quiz
@@ -261,14 +272,28 @@ async def ensure_quiz_has_questions(session: AsyncSession, quiz: Quiz) -> Quiz:
         ),
     )
     loaded = result.scalar_one()
-    topic_title = loaded.topic.title if loaded.topic is not None else "Topic"
-    if quiz_needs_content_refresh(loaded, topic_title):
-        await _replace_quiz_questions(session, loaded, topic_title)
+    topic_id = loaded.topic_id
+    title, chapter_title, subject_code, grade = await _load_topic_context(session, topic_id)
+    if quiz_needs_content_refresh(
+        loaded,
+        title,
+        chapter_title=chapter_title,
+        subject_code=subject_code,
+        grade=grade,
+    ):
+        await _replace_quiz_questions(
+            session,
+            loaded,
+            topic_title=title,
+            chapter_title=chapter_title,
+            subject_code=subject_code,
+            grade=grade,
+        )
     return loaded
 
 
 async def refresh_all_topic_quizzes(session: AsyncSession) -> int:
-    """Refresh every active quiz so local DBs pick up corrected topic content."""
+    """Refresh every active quiz so local DBs pick up topic-specific content."""
     result = await session.execute(
         select(Quiz)
         .where(Quiz.is_active.is_(True))
@@ -280,8 +305,54 @@ async def refresh_all_topic_quizzes(session: AsyncSession) -> int:
     quizzes = list(result.scalars().unique().all())
     updated = 0
     for quiz in quizzes:
-        topic_title = quiz.topic.title if quiz.topic is not None else "Topic"
-        if quiz_needs_content_refresh(quiz, topic_title):
-            await _replace_quiz_questions(session, quiz, topic_title)
+        title, chapter_title, subject_code, grade = await _load_topic_context(
+            session,
+            quiz.topic_id,
+        )
+        if quiz_needs_content_refresh(
+            quiz,
+            title,
+            chapter_title=chapter_title,
+            subject_code=subject_code,
+            grade=grade,
+        ):
+            await _replace_quiz_questions(
+                session,
+                quiz,
+                topic_title=title,
+                chapter_title=chapter_title,
+                subject_code=subject_code,
+                grade=grade,
+            )
             updated += 1
     return updated
+
+
+async def ensure_quizzes_for_all_active_topics(session: AsyncSession) -> dict[str, int]:
+    """Idempotently ensure every active topic has a topic-specific quiz when mapped."""
+    result = await session.execute(select(Topic).where(Topic.is_active.is_(True)))
+    topics = list(result.scalars().all())
+    created_or_refreshed = 0
+    total_questions = 0
+    for topic in topics:
+        before = await session.execute(
+            select(Quiz)
+            .where(Quiz.topic_id == topic.id, Quiz.is_active.is_(True))
+            .options(selectinload(Quiz.questions))
+            .limit(1),
+        )
+        existing = before.scalar_one_or_none()
+        quiz = await ensure_quiz_for_topic(session, topic.id, topic.title)
+        if quiz.is_active and quiz.id is not None:
+            if existing is None or len(existing.questions) != len(quiz.questions):
+                created_or_refreshed += 1
+            total_questions += len(quiz.questions)
+    return {
+        "topics": len(topics),
+        "quizzes_touched": created_or_refreshed,
+        "question_rows_linked": total_questions,
+    }
+
+
+# Backwards-compatible export for older tests that imported the name.
+TOPIC_QUESTION_BANKS: dict[str, QuestionBank] = {}

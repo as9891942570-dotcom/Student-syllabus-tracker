@@ -13,7 +13,6 @@ from app.models.school_class import SchoolClass
 from app.models.stream import Stream
 from app.models.student_profile import StudentProfile
 from app.models.student_topic_progress import StudentTopicProgress
-from app.models.study_session import StudySession
 from app.models.subject import Subject
 from app.models.topic import Topic
 from app.models.user import User
@@ -29,7 +28,6 @@ __all__ = [
     "Chapter",
     "Topic",
     "StudentTopicProgress",
-    "StudySession",
     "DailyActivity",
     "Quiz",
     "QuizQuestion",

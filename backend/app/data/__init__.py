@@ -1,0 +1,1 @@
+"""Static curriculum data packages."""

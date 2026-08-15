@@ -40,6 +40,16 @@ class ProfileUpdateRequest(BaseModel):
     stream_id: Optional[UUID] = None
     clear_stream: bool = False
 
+
+class AcademicChangeRequest(BaseModel):
+    """Explicit board/class/stream change. Normal profile PUT cannot do this."""
+
+    confirm: bool = False
+    board_id: UUID
+    class_id: UUID
+    stream_id: Optional[UUID] = None
+    clear_stream: bool = False
+
     @field_validator("mobile")
     @classmethod
     def validate_mobile(cls, value: Optional[str]) -> Optional[str]:
@@ -64,8 +74,16 @@ class ProfileResponse(BaseModel):
     school_class: Optional[ClassResponse]
     stream: Optional[StreamResponse]
     total_xp: int = 0
+    total_coins: int = 0
+    level: int = 1
+    level_floor_xp: int = 0
+    next_level_xp: int = 100
+    xp_into_level: int = 0
+    xp_needed_for_next: int = 100
+    level_progress_percentage: int = 0
     completion_percentage: int
     is_complete: bool
+    academic_locked: bool = False
     missing_fields: list[str]
     created_at: datetime
     updated_at: datetime

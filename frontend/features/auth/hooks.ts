@@ -1,24 +1,34 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 
 import { ApiError, authApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth-store";
-import type { LoginPayload, RegisterPayload } from "@/types/auth";
+import { rememberDeviceAccount } from "@/stores/device-accounts";
+import type { LoginPayload, RegisterPayload, TokenResponse } from "@/types/auth";
+
+function applyAuthSession(
+  queryClient: ReturnType<typeof useQueryClient>,
+  data: TokenResponse,
+) {
+  queryClient.clear();
+  rememberDeviceAccount(data.user);
+  useAuthStore.getState().setSession({
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    user: data.user,
+  });
+}
 
 export function useLoginMutation() {
   const router = useRouter();
-  const setSession = useAuthStore((s) => s.setSession);
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (payload: LoginPayload) => authApi.login(payload),
     onSuccess: (data) => {
-      setSession({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        user: data.user,
-      });
+      applyAuthSession(queryClient, data);
       router.replace("/dashboard");
     },
   });
@@ -26,16 +36,12 @@ export function useLoginMutation() {
 
 export function useRegisterMutation() {
   const router = useRouter();
-  const setSession = useAuthStore((s) => s.setSession);
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (payload: RegisterPayload) => authApi.register(payload),
     onSuccess: (data) => {
-      setSession({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        user: data.user,
-      });
+      applyAuthSession(queryClient, data);
       router.replace("/dashboard");
     },
   });
@@ -43,6 +49,7 @@ export function useRegisterMutation() {
 
 export function useLogoutMutation() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const clearSession = useAuthStore((s) => s.clearSession);
 
@@ -57,6 +64,7 @@ export function useLogoutMutation() {
       }
     },
     onSettled: () => {
+      queryClient.clear();
       clearSession();
       router.replace("/login");
     },

@@ -151,12 +151,23 @@ async def test_syllabus_api_flow(client: AsyncClient) -> None:
         headers=headers,
         json={"is_completed": True},
     )
-    assert progress.status_code == 200
-    assert progress.json()["is_completed"] is True
+    assert progress.status_code == 403
+    assert topics.json()["topics"][0]["is_completed"] is False
+    assert topics.json()["topics"][0]["is_locked"] is False
+    if len(topics.json()["topics"]) > 1:
+        assert topics.json()["topics"][1]["is_locked"] is True
+
+    again = await client.get(
+        f"/api/v1/syllabus/chapters/{chapter_id}/topics",
+        headers=headers,
+    )
+    assert again.json()["topics"][0]["is_completed"] is False
+    if len(again.json()["topics"]) > 1:
+        assert again.json()["topics"][1]["is_locked"] is True
 
     completion = await client.get("/api/v1/syllabus/completion", headers=headers)
     assert completion.status_code == 200
-    assert completion.json()["completed_topics"] == 1
+    assert completion.json()["completed_topics"] == 0
 
     structure = await client.get("/api/v1/syllabus/structure", headers=headers)
     assert structure.status_code == 200

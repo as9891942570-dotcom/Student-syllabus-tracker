@@ -1,15 +1,20 @@
+"use client";
+
 import { Coins, Flame, Sparkles } from "lucide-react";
 
+import { AccountMenu } from "@/components/layout/account-menu";
 import { ThemeToggle } from "@/components/common/theme-toggle";
 
 export function TopBar({
   title,
   xp = 0,
+  level = 1,
   streak = 0,
   coins = 0,
 }: {
   title: string;
   xp?: number;
+  level?: number;
   streak?: number;
   coins?: number;
 }) {
@@ -24,10 +29,14 @@ export function TopBar({
         </h1>
       </div>
       <div className="flex items-center gap-2 md:gap-3">
-        <Chip icon={<Sparkles className="h-3.5 w-3.5 text-xp" />} label={`${xp} XP`} />
+        <Chip
+          icon={<Sparkles className="h-3.5 w-3.5 text-xp" />}
+          label={`Lv ${level} · ${xp} XP`}
+        />
         <Chip icon={<Flame className="h-3.5 w-3.5 text-streak" />} label={`${streak}`} />
         <Chip icon={<Coins className="h-3.5 w-3.5 text-coin" />} label={`${coins}`} />
         <ThemeToggle />
+        <AccountMenu compact />
       </div>
     </header>
   );

@@ -221,55 +221,6 @@ export const syllabusApi = {
       "/syllabus/structure",
       { auth: true },
     ),
-  setTopicProgress: (topicId: string, isCompleted: boolean) =>
-    apiFetch<import("@/types/syllabus").Topic>(
-      `/syllabus/topics/${topicId}/progress`,
-      {
-        method: "PATCH",
-        auth: true,
-        body: JSON.stringify({ is_completed: isCompleted }),
-      },
-    ),
-};
-
-export const studyApi = {
-  start: (topicId: string) =>
-    apiFetch<import("@/types/study-session").StudySession>(
-      "/study-sessions/start",
-      {
-        method: "POST",
-        auth: true,
-        body: JSON.stringify({ topic_id: topicId }),
-      },
-    ),
-  getActive: () =>
-    apiFetch<import("@/types/study-session").StudySession | null>(
-      "/study-sessions/active",
-      { auth: true },
-    ),
-  getSession: (sessionId: string) =>
-    apiFetch<import("@/types/study-session").StudySession>(
-      `/study-sessions/${sessionId}`,
-      { auth: true },
-    ),
-  recordActivity: (sessionId: string, result: "correct" | "incorrect") =>
-    apiFetch<import("@/types/study-session").StudySession>(
-      `/study-sessions/${sessionId}/activity`,
-      {
-        method: "POST",
-        auth: true,
-        body: JSON.stringify({ result }),
-      },
-    ),
-  complete: (sessionId: string) =>
-    apiFetch<import("@/types/study-session").StudySession>(
-      `/study-sessions/${sessionId}/complete`,
-      {
-        method: "POST",
-        auth: true,
-        body: JSON.stringify({}),
-      },
-    ),
 };
 
 export const quizApi = {
@@ -331,4 +282,11 @@ export const quizApi = {
       "/quiz-attempts/history",
       { auth: true },
     ),
+};
+
+export const progressionApi = {
+  me: () =>
+    apiFetch<import("@/types/progression").Progression>("/progression/me", {
+      auth: true,
+    }),
 };

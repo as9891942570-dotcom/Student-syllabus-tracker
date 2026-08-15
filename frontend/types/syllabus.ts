@@ -4,6 +4,8 @@ export type Topic = {
   sort_order: number;
   is_completed: boolean;
   completed_at: string | null;
+  is_locked: boolean;
+  is_current: boolean;
 };
 
 export type Chapter = {

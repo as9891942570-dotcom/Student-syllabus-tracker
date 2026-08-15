@@ -44,14 +44,18 @@ Academic syllabus tracking is ready (no teaching content):
 
 ## Phase 5 status
 
-Gamified study sessions are ready (no teaching content):
+XP foundation (kept; study-session UI/API later removed in Phase 8):
 
-- Backend: `study_sessions`, `daily_activities`, profile `total_xp`, Alembic `0004_study_sessions`
-- APIs: start / active / activity / complete study sessions with score + XP
-- Frontend: Start Session on topics, `/study/[sessionId]` quest screen, result + XP animation
-- Tests: **26** pytest tests total
+- Backend: `daily_activities`, profile `total_xp` (Alembic `0004_study_sessions` history)
+- Study-session feature was removed: progression is topic quiz only
 
-Later phases (streaks, quizzes, leaderboards, etc.) wait for confirmation.
+## Phase 6–7 status
+
+Topic quizzes + unlock/XP/level progression are ready.
+
+## Phase 8 status
+
+Complete CBSE 2026–27 syllabus metadata + topic-specific quizzes; study sessions removed.
 
 ## Quick start (local — no Docker)
 

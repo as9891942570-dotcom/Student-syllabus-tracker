@@ -47,7 +47,7 @@ export function ApiHealthBadge() {
       {label}
       {data ? (
         <span className="font-normal text-muted-foreground">
-          v{data.version}
+          {data.dependencies?.database === false ? "database offline" : `v${data.version}`}
         </span>
       ) : null}
     </motion.div>

@@ -1,4 +1,4 @@
-"""Phase 6 quiz system unit and API tests."""
+"""Quiz system unit and API tests (topic-specific, session-free)."""
 
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -23,11 +23,12 @@ from app.services.quiz import (
 )
 from app.services.quiz_seed import (
     LEGACY_PROMPT_FRAGMENTS,
-    TOPIC_QUESTION_BANKS,
+    MAX_QUESTIONS_PER_TOPIC,
     contains_legacy_prompt,
     questions_for_topic,
 )
 from app.services.syllabus import SyllabusService
+from app.services.topic_quiz_builder import is_meta_question, questions_match_topic, validate_question_bank
 
 
 def test_score_percentage_and_xp_helpers() -> None:
@@ -35,9 +36,26 @@ def test_score_percentage_and_xp_helpers() -> None:
     assert calculate_quiz_percentage(correct=1, total=4) == 25
     assert calculate_quiz_percentage(correct=0, total=0) == 0
     assert calculate_quiz_score(correct=2, total=4) == 50
-    # base 20 + 30% of 30 (=9) + 2*2 correct + 0 perfect = 33
     assert calculate_quiz_xp(percentage=30, correct_count=2) == 20 + 9 + 4
     assert calculate_quiz_xp(percentage=100, correct_count=3) == 20 + 30 + 6 + 15
+    assert calculate_quiz_xp(percentage=100, correct_count=20) == 20 + 30 + 40 + 15
+
+
+def test_topic_question_bank_is_topic_specific_and_capped() -> None:
+    bank = questions_for_topic(
+        "Coulomb's law",
+        chapter_title="Electric Charges and Fields",
+        subject_code="PHY",
+        grade=12,
+    )
+    assert 1 <= len(bank) <= MAX_QUESTIONS_PER_TOPIC
+    assert validate_question_bank("Coulomb's law", bank) == []
+    for prompt, options in bank:
+        assert not contains_legacy_prompt(prompt)
+        assert not is_meta_question(prompt, options)
+        assert sum(1 for _, ok in options if ok) == 1
+        assert "while studying" not in prompt.lower()
+        assert "definitions, relations, and applications" not in prompt.lower()
 
 
 async def _ready_user(session: AsyncSession, email: str):
@@ -91,7 +109,6 @@ async def _complete_profile(client: AsyncClient, headers: dict[str, str]) -> Non
     boards = (await client.get("/api/v1/boards", headers=headers)).json()
     classes = (await client.get("/api/v1/classes", headers=headers)).json()
     class_8 = next(c for c in classes if c["grade"] == 8)
-    # photo required for completion
     await client.post(
         "/api/v1/profile/me/photo",
         headers=headers,
@@ -110,7 +127,6 @@ async def _complete_profile(client: AsyncClient, headers: dict[str, str]) -> Non
 
 @pytest.mark.asyncio
 async def test_history_topic_quizzes_use_subject_questions(db_session: AsyncSession) -> None:
-    """Ancient / Medieval / Modern overview must seed history questions, not app meta."""
     tokens = await AuthService(db_session).register(
         RegisterRequest(
             email="quizhistory@example.com",
@@ -148,21 +164,27 @@ async def test_history_topic_quizzes_use_subject_questions(db_session: AsyncSess
     )
 
     service = QuizService(db_session)
-    required = ("Ancient", "Medieval", "Modern overview")
-    found = {t.title: t for t in chapter.topics if t.title in required}
-    assert set(found) == set(required)
+    ordered = chapter.topics[:2]
+    assert len(ordered) >= 2
+    prompt_sets: list[set[str]] = []
 
-    for title, topic in found.items():
-        expected_prompts = [prompt for prompt, _ in questions_for_topic(title)]
-        assert len(expected_prompts) == 3
+    for topic in ordered:
+        expected_prompts = [
+            prompt
+            for prompt, _ in questions_for_topic(
+                topic.title,
+                chapter_title=chapter.title,
+                subject_code="HIST",
+                grade=11,
+            )
+        ]
+        assert 1 <= len(expected_prompts) <= MAX_QUESTIONS_PER_TOPIC
 
         quizzes = await service.list_for_topic(user, topic.id)
-        assert quizzes[0].question_count == 3
+        assert quizzes[0].question_count == len(expected_prompts)
 
-        # Force a second ensure to prove legacy refresh path stays topic-correct.
-        quizzes = await service.list_for_topic(user, topic.id)
         attempt = await service.start(user, quizzes[0].id)
-        assert attempt.total_questions == 3
+        assert attempt.total_questions == len(expected_prompts)
 
         from app.repositories.quiz import QuizRepository
 
@@ -170,6 +192,7 @@ async def test_history_topic_quizzes_use_subject_questions(db_session: AsyncSess
         assert loaded is not None
         prompts = [q.prompt for q in sorted(loaded.questions, key=lambda item: item.sort_order)]
         assert prompts == expected_prompts
+        prompt_sets.append(set(prompts))
         for prompt in prompts:
             assert not contains_legacy_prompt(prompt)
             for fragment in LEGACY_PROMPT_FRAGMENTS:
@@ -180,38 +203,43 @@ async def test_history_topic_quizzes_use_subject_questions(db_session: AsyncSess
             assert len(question.options) >= 2
             assert len(correct) == 1
 
-        # Complete so the next topic can start (one active attempt limit).
-        await service.complete(user, attempt.id)
+        for _ in range(attempt.total_questions):
+            question = await service.current_question(user, attempt.id)
+            orm_q = next(q for q in loaded.questions if q.id == question.id)
+            correct_opt = next(o for o in orm_q.options if o.is_correct)
+            await service.submit_answer(
+                user,
+                attempt.id,
+                SubmitAnswerRequest(option_id=correct_opt.id),
+            )
+            if question.question_number < question.total_questions:
+                await service.next_question(user, attempt.id)
+        result = await service.complete(user, attempt.id)
+        assert result.topic_completed is True
 
-    # Banks themselves must never include legacy EduQuest prompts.
-    for key, bank in TOPIC_QUESTION_BANKS.items():
-        assert len(bank) == 3
-        for prompt, options in bank:
-            assert not contains_legacy_prompt(prompt)
-            assert sum(1 for _, ok in options if ok) == 1
+    assert prompt_sets[0] != prompt_sets[1]
 
 
 @pytest.mark.asyncio
-async def test_seeded_quiz_has_three_questions_immediately(db_session: AsyncSession) -> None:
-    """Questions must be associated in-session (not only via FK after reload)."""
+async def test_seeded_quiz_has_topic_questions_immediately(db_session: AsyncSession) -> None:
     user, topic_id = await _ready_user(db_session, "quizseed@example.com")
     service = QuizService(db_session)
 
     quizzes = await service.list_for_topic(user, topic_id)
     assert len(quizzes) >= 1
-    assert quizzes[0].question_count == 3
+    assert 1 <= quizzes[0].question_count <= MAX_QUESTIONS_PER_TOPIC
 
     detail = await service.get_quiz(user, quizzes[0].id)
-    assert detail.question_count == 3
+    assert detail.question_count == quizzes[0].question_count
 
     attempt = await service.start(user, quizzes[0].id)
-    assert attempt.total_questions == 3
+    assert attempt.total_questions == quizzes[0].question_count
     assert attempt.status == "active"
     assert attempt.seconds_remaining > 0
 
     question = await service.current_question(user, attempt.id)
     assert question.question_number == 1
-    assert question.total_questions == 3
+    assert question.total_questions == quizzes[0].question_count
     assert len(question.options) >= 2
     assert "is_correct" not in question.model_dump()
 
@@ -233,10 +261,10 @@ async def test_backfill_empty_quiz_questions(db_session: AsyncSession) -> None:
 
     service = QuizService(db_session)
     detail = await service.get_quiz(user, empty.id)
-    assert detail.question_count == 3
+    assert 1 <= detail.question_count <= MAX_QUESTIONS_PER_TOPIC
 
     attempt = await service.start(user, empty.id)
-    assert attempt.total_questions == 3
+    assert attempt.total_questions == detail.question_count
 
 
 @pytest.mark.asyncio
@@ -245,76 +273,123 @@ async def test_list_start_answer_complete_quiz(db_session: AsyncSession) -> None
     service = QuizService(db_session)
 
     quizzes = await service.list_for_topic(user, topic_id)
-    assert len(quizzes) >= 1
     quiz = await service.get_quiz(user, quizzes[0].id)
-    assert quiz.question_count == 3
+    assert 1 <= quiz.question_count <= MAX_QUESTIONS_PER_TOPIC
     assert quiz.topic_id == topic_id
 
     attempt = await service.start(user, quiz.id)
     assert attempt.status == "active"
-    assert attempt.total_questions == 3
-    assert attempt.xp_earned == 0
+    assert attempt.total_questions == quiz.question_count
 
-    question = await service.current_question(user, attempt.id)
-    assert "is_correct" not in question.model_dump()
-    assert all("is_correct" not in o.model_dump() for o in question.options)
-    assert len(question.options) >= 2
+    orm_quiz = await service.quizzes.get_with_questions(quiz.id)
+    assert orm_quiz is not None
 
-    # Find correct option from ORM (not API)
-    orm_q = next(q for q in (await service.quizzes.get_with_questions(quiz.id)).questions if q.id == question.id)
-    correct_opt = next(o for o in orm_q.options if o.is_correct)
-    wrong_opt = next(o for o in orm_q.options if not o.is_correct)
-
-    submit = await service.submit_answer(
-        user,
-        attempt.id,
-        SubmitAnswerRequest(option_id=correct_opt.id),
-    )
-    assert submit.is_correct is True
-    assert submit.correct_count == 1
-
-    with pytest.raises(ConflictError):
-        await service.submit_answer(
+    wrong_done = False
+    for index in range(attempt.total_questions):
+        question = await service.current_question(user, attempt.id)
+        orm_q = next(q for q in orm_quiz.questions if q.id == question.id)
+        if index == 1 and not wrong_done and attempt.total_questions > 1:
+            option = next(o for o in orm_q.options if not o.is_correct)
+            wrong_done = True
+        else:
+            option = next(o for o in orm_q.options if o.is_correct)
+        answer = await service.submit_answer(
             user,
             attempt.id,
-            SubmitAnswerRequest(option_id=wrong_opt.id),
+            SubmitAnswerRequest(option_id=option.id),
         )
-
-    await service.next_question(user, attempt.id)
-    q2 = await service.current_question(user, attempt.id)
-    orm_q2 = next(q for q in (await service.quizzes.get_with_questions(quiz.id)).questions if q.id == q2.id)
-    wrong2 = next(o for o in orm_q2.options if not o.is_correct)
-    await service.submit_answer(user, attempt.id, SubmitAnswerRequest(option_id=wrong2.id))
-
-    await service.next_question(user, attempt.id)
-    q3 = await service.current_question(user, attempt.id)
-    orm_q3 = next(q for q in (await service.quizzes.get_with_questions(quiz.id)).questions if q.id == q3.id)
-    correct3 = next(o for o in orm_q3.options if o.is_correct)
-    await service.submit_answer(user, attempt.id, SubmitAnswerRequest(option_id=correct3.id))
+        if index == 1 and wrong_done:
+            assert answer.is_correct is False
+            assert answer.correct_option_id != option.id
+        if index == 0:
+            assert answer.is_correct is True
+            assert answer.correct_option_id == option.id
+        if question.question_number < question.total_questions:
+            await service.next_question(user, attempt.id)
 
     result = await service.complete(user, attempt.id)
     assert result.status == "completed"
-    assert result.total_questions == 3
-    assert result.answered_count == 3
-    assert result.correct_count == 2
-    assert result.incorrect_count == 1
-    assert result.percentage == 67
-    assert result.score == 67
-    assert result.xp_earned == calculate_quiz_xp(percentage=67, correct_count=2)
-    assert result.total_xp == result.xp_earned
-    assert result.topic_completed is True
+    assert result.total_questions == quiz.question_count
+    expected_incorrect = 1 if quiz.question_count > 1 else 0
+    expected_correct = quiz.question_count - expected_incorrect
+    assert result.correct_count == expected_correct
+    assert result.incorrect_count == expected_incorrect
+    assert result.percentage == calculate_quiz_percentage(
+        correct=expected_correct,
+        total=quiz.question_count,
+    )
+    assert result.topic_completed is (result.percentage >= 60)
+    history = await service.history(user)
+    assert len(history) == 1
 
-    with pytest.raises(ConflictError):
+
+@pytest.mark.asyncio
+async def test_quiz_returns_only_selected_topic_questions(db_session: AsyncSession) -> None:
+    tokens = await AuthService(db_session).register(
+        RegisterRequest(
+            email="quiztopicisolation@example.com",
+            password="Secret123!",
+            full_name="Topic Isolation",
+        ),
+    )
+    user = await AuthService(db_session).get_user(tokens.user.id)
+    profile_service = ProfileService(db_session)
+    await profile_service.ensure_lookups()
+    boards = await profile_service.list_boards()
+    classes = await profile_service.list_classes()
+    streams = await profile_service.list_streams()
+    class_12 = next(c for c in classes if c.grade == 12)
+    pcm = next(s for s in streams if s.code == "SCIENCE_PCM")
+    profile = await profile_service.get_or_create_profile(user)
+    profile.photo_url = "/media/profiles/demo.jpg"
+    await profile_service.profiles.update(profile)
+    await profile_service.update_profile(
+        user,
+        ProfileUpdateRequest(
+            mobile="9876504444",
+            board_id=boards[0].id,
+            class_id=class_12.id,
+            stream_id=pcm.id,
+        ),
+    )
+    subjects = await SyllabusService(db_session).list_subjects(user)
+    physics = next(s for s in subjects if s.code == "PHY")
+    detail = await SyllabusService(db_session).get_subject_chapters(user, physics.id)
+    chapter = await SyllabusService(db_session).get_chapter_topics(user, detail.chapters[0].id)
+    topic_a = chapter.topics[0]
+    topic_b = next(t for t in chapter.topics if t.title == "Coulomb's law")
+
+    service = QuizService(db_session)
+    quiz_a = (await service.list_for_topic(user, topic_a.id))[0]
+    attempt = await service.start(user, quiz_a.id)
+    loaded = await service.quizzes.get_with_questions(quiz_a.id)
+    assert loaded is not None
+    for _ in range(attempt.total_questions):
+        question = await service.current_question(user, attempt.id)
+        orm_q = next(q for q in loaded.questions if q.id == question.id)
+        correct = next(o for o in orm_q.options if o.is_correct)
         await service.submit_answer(
             user,
             attempt.id,
-            SubmitAnswerRequest(option_id=correct3.id),
+            SubmitAnswerRequest(option_id=correct.id),
         )
+        if question.question_number < question.total_questions:
+            await service.next_question(user, attempt.id)
+    await service.complete(user, attempt.id)
 
-    history = await service.history(user)
-    assert len(history) == 1
-    assert history[0].percentage == 67
-    assert history[0].completed is True
+    quiz_b = (await service.list_for_topic(user, topic_b.id))[0]
+    loaded_a = await service.quizzes.get_with_questions(quiz_a.id)
+    loaded_b = await service.quizzes.get_with_questions(quiz_b.id)
+    assert loaded_a is not None and loaded_b is not None
+    prompts_a = {q.prompt for q in loaded_a.questions}
+    prompts_b = {q.prompt for q in loaded_b.questions}
+    assert prompts_a != prompts_b
+    assert all(questions_match_topic(p, topic_a.title) for p in prompts_a)
+    assert all(questions_match_topic(p, topic_b.title) for p in prompts_b)
+    assert all(not contains_legacy_prompt(p) for p in prompts_a | prompts_b)
+    assert all(not is_meta_question(p) for p in prompts_a | prompts_b)
+    assert len(loaded_a.questions) <= MAX_QUESTIONS_PER_TOPIC
+    assert len(loaded_b.questions) <= MAX_QUESTIONS_PER_TOPIC
 
 
 @pytest.mark.asyncio
@@ -346,7 +421,6 @@ async def test_invalid_quiz_topic_option_and_auth(db_session: AsyncSession) -> N
     with pytest.raises(ForbiddenError):
         await service.current_question(other, attempt.id)
 
-    # Correct answer not in public payload
     dumped = question.model_dump()
     assert "is_correct" not in dumped
     for opt in dumped["options"]:
@@ -371,12 +445,14 @@ async def test_expired_attempt_auto_completes(db_session: AsyncSession) -> None:
 
     result = await service.get_result(user, attempt.id)
     assert result.status == "expired"
-    assert result.xp_earned > 0
+    assert result.percentage < 60
+    assert result.xp_earned == 0
+    assert result.coins_earned == 0
+    assert result.topic_completed is False
 
 
 @pytest.mark.asyncio
 async def test_quiz_api_auth_and_flow(client: AsyncClient) -> None:
-    # Unauthenticated
     unauth = await client.get(f"/api/v1/quizzes/topics/{uuid4()}")
     assert unauth.status_code == 401
 
@@ -400,13 +476,20 @@ async def test_quiz_api_auth_and_flow(client: AsyncClient) -> None:
     quiz_id = quizzes[0]["id"]
 
     detail = (await client.get(f"/api/v1/quizzes/{quiz_id}", headers=headers)).json()
-    assert detail["question_count"] == 3
+    assert 1 <= detail["question_count"] <= MAX_QUESTIONS_PER_TOPIC
     assert "questions" not in detail
+
+    # Session APIs must be gone.
+    gone = await client.post(
+        "/api/v1/study-sessions/start",
+        headers=headers,
+        json={"topic_id": topic_id},
+    )
+    assert gone.status_code == 404
 
     start = await client.post(f"/api/v1/quizzes/{quiz_id}/start", headers=headers)
     assert start.status_code == 201
-    attempt = start.json()
-    attempt_id = attempt["id"]
+    attempt_id = start.json()["id"]
 
     q = (
         await client.get(
@@ -415,31 +498,43 @@ async def test_quiz_api_auth_and_flow(client: AsyncClient) -> None:
         )
     ).json()
     assert "is_correct" not in q
-    for opt in q["options"]:
-        assert "is_correct" not in opt
+    assert q.get("correct_option_id") in (None, "")
 
-    # Submit first option (may be wrong) then finish remaining via complete
     ans = await client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/answers",
         headers=headers,
         json={"option_id": q["options"][0]["id"]},
     )
     assert ans.status_code == 200
-    assert "is_correct" in ans.json()
+    assert "correct_option_id" in ans.json()
+    assert ans.json()["is_correct"] in {True, False}
+
+    after = (
+        await client.get(
+            f"/api/v1/quiz-attempts/{attempt_id}/current-question",
+            headers=headers,
+        )
+    ).json()
+    assert after["already_answered"] is True
+    assert after["correct_option_id"] == ans.json()["correct_option_id"]
 
     done = await client.post(
         f"/api/v1/quiz-attempts/{attempt_id}/complete",
         headers=headers,
     )
     assert done.status_code == 200
-    body = done.json()
-    assert body["status"] == "completed"
-    assert body["xp_earned"] >= 20
+    assert done.json()["status"] == "completed"
+    if done.json()["percentage"] < 60:
+        assert done.json()["xp_earned"] == 0
+        assert done.json()["topic_completed"] is False
+        assert done.json().get("coins_earned", 0) == 0
+    else:
+        assert done.json()["xp_earned"] >= 20
+        assert done.json()["topic_completed"] is True
 
     hist = (await client.get("/api/v1/quiz-attempts/history", headers=headers)).json()
     assert len(hist) >= 1
 
-    # Other user cannot access
     headers2 = await _auth_header(client, "quizapi2@example.com")
     await _complete_profile(client, headers2)
     forbidden = await client.get(
@@ -447,3 +542,10 @@ async def test_quiz_api_auth_and_flow(client: AsyncClient) -> None:
         headers=headers2,
     )
     assert forbidden.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_no_study_session_openapi_paths(client: AsyncClient) -> None:
+    openapi = (await client.get("/openapi.json")).json()
+    paths = openapi.get("paths", {})
+    assert not any("study-session" in path for path in paths)

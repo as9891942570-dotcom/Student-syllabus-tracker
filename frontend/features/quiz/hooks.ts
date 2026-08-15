@@ -102,6 +102,8 @@ export function useCompleteQuizMutation(attemptId: string) {
         queryKey: queryKeys.syllabus.completion,
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.quiz.history });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.progression.me });
+      await queryClient.invalidateQueries({ queryKey: ["syllabus", "chapters"] });
       router.push(`/quiz/attempt/${attemptId}/result`);
     },
   });

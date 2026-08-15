@@ -14,11 +14,15 @@ class UserRepository(BaseRepository[User]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(User, session)
 
-    async def get_by_email(self, email: str) -> Optional[User]:
+    async def list_by_email(self, email: str) -> list[User]:
         result = await self.session.execute(
-            select(User).where(User.email == email.lower()),
+            select(User).where(User.email == email.lower()).order_by(User.created_at),
         )
-        return result.scalar_one_or_none()
+        return list(result.scalars().all())
+
+    async def get_by_email(self, email: str) -> Optional[User]:
+        users = await self.list_by_email(email)
+        return users[0] if users else None
 
     async def get_by_id(self, user_id: UUID) -> Optional[User]:
         return await self.get(user_id)

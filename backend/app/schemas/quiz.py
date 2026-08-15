@@ -53,6 +53,7 @@ class QuizQuestionPublic(BaseModel):
     options: list[QuizOptionPublic]
     already_answered: bool = False
     selected_option_id: Optional[UUID] = None
+    correct_option_id: Optional[UUID] = None
 
 
 class SubmitAnswerRequest(BaseModel):
@@ -63,6 +64,7 @@ class SubmitAnswerResponse(BaseModel):
     question_id: UUID
     selected_option_id: UUID
     is_correct: bool
+    correct_option_id: UUID
     attempt_id: UUID
     answered_count: int
     correct_count: int
@@ -91,7 +93,18 @@ class QuizAttemptResponse(BaseModel):
     percentage: int
     xp_earned: int
     total_xp: int
+    coins_earned: int = 0
+    total_coins: int = 0
     topic_completed: bool
+    next_topic_unlocked: bool = False
+    next_topic_id: Optional[UUID] = None
+    next_topic_title: Optional[str] = None
+    xp_awarded: bool = True
+    coins_awarded: bool = False
+    level: int = 1
+    level_floor_xp: int = 0
+    next_level_xp: int = 100
+    level_progress_percentage: int = 0
     started_at: datetime
     expires_at: datetime
     ended_at: Optional[datetime]

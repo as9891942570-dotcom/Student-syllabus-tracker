@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { AccountMenu } from "@/components/layout/account-menu";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -61,6 +62,9 @@ export function Sidebar() {
           );
         })}
       </nav>
+      <div className="mt-4 border-t border-border pt-4">
+        <AccountMenu />
+      </div>
     </aside>
   );
 }

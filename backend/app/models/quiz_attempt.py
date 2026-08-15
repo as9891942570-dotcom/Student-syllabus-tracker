@@ -42,6 +42,7 @@ class QuizAttempt(Base):
     score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     percentage: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     xp_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    coins_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

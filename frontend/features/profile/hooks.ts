@@ -4,12 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, profileApi } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import { useAuthStore } from "@/stores/auth-store";
 import type { ProfileUpdatePayload } from "@/types/profile";
 
 export function useProfileQuery() {
+  const accessToken = useAuthStore((s) => s.accessToken);
   return useQuery({
     queryKey: queryKeys.profile.me,
     queryFn: () => profileApi.getMe(),
+    enabled: Boolean(accessToken),
   });
 }
 

@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     timezone: str = "Asia/Kolkata"
 
+    # Coins awarded once on first successful topic quiz (>=60%).
+    coin_reward_per_topic: int = 10
+
     media_root: str = str(BACKEND_ROOT / "uploads")
     media_url_path: str = "/media"
     max_upload_bytes: int = 2 * 1024 * 1024

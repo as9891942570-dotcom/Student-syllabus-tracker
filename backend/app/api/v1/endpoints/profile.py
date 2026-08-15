@@ -9,6 +9,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
 from app.models.user import User
 from app.schemas.profile import (
+    AcademicChangeRequest,
     BoardResponse,
     ClassResponse,
     ProfileResponse,
@@ -59,6 +60,15 @@ async def update_my_profile(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ProfileResponse:
     return await ProfileService(session).update_profile(current_user, payload)
+
+
+@router.post("/profile/academic-change", response_model=ProfileResponse)
+async def change_academic_identity(
+    payload: AcademicChangeRequest,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ProfileResponse:
+    return await ProfileService(session).change_academic_identity(current_user, payload)
 
 
 @router.post("/profile/me/photo", response_model=ProfileResponse)

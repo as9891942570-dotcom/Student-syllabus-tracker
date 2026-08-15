@@ -27,7 +27,8 @@ export default function ProfileEditPage() {
           <div>
             <h2 className="font-display text-2xl font-semibold">Edit profile</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Update your academic details and photo.
+              Update your name, mobile, and photo. Board, class, and stream stay
+              locked after setup.
             </p>
           </div>
           <Link

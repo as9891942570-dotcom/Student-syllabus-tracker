@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -53,6 +53,12 @@ class Subject(Base):
     # Non-null scope key so uniqueness works for Classes 6–10 (no stream).
     stream_scope: Mapped[str] = mapped_column(String(32), nullable=False, default="NONE")
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    curriculum_version: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="CBSE 2026-27",
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     board: Mapped[Board] = relationship("Board")
     school_class: Mapped[SchoolClass] = relationship("SchoolClass")

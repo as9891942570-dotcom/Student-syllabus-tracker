@@ -1,63 +1,78 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Play, Swords, X } from "lucide-react";
+import { Check, Lock, Swords } from "lucide-react";
 
-import {
-  getStudyErrorMessage,
-  useStartSessionMutation,
-} from "@/features/study/hooks";
 import { useTopicQuizzesQuery } from "@/features/quiz/hooks";
-import { useToggleTopicMutation } from "@/features/syllabus/hooks";
 import type { Topic } from "@/types/syllabus";
 import { cn } from "@/lib/utils";
 
-function TopicQuizLink({ topicId }: { topicId: string }) {
-  const quizzes = useTopicQuizzesQuery(topicId);
+function TopicQuizLink({
+  topicId,
+  locked,
+  isCurrent,
+  isCompleted,
+}: {
+  topicId: string;
+  locked: boolean;
+  isCurrent: boolean;
+  isCompleted: boolean;
+}) {
+  const quizzes = useTopicQuizzesQuery(locked ? "" : topicId);
   const quiz = quizzes.data?.[0];
+
+  if (locked) {
+    return (
+      <span className="inline-flex items-center justify-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground opacity-60">
+        <Lock className="h-3.5 w-3.5" />
+        Locked
+      </span>
+    );
+  }
 
   if (quizzes.isLoading) {
     return (
-      <span className="inline-flex items-center justify-center rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground">
-        Quiz...
+      <span className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
+        {isCompleted ? "Retry Quiz..." : "Start Quiz..."}
       </span>
     );
   }
 
   if (!quiz) {
-    return null;
+    return (
+      <span className="inline-flex items-center justify-center rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground">
+        Quiz coming soon
+      </span>
+    );
   }
 
   return (
     <Link
       href={`/quiz/${quiz.id}`}
-      className="inline-flex items-center justify-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20"
+      className={cn(
+        "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold",
+        isCurrent
+          ? "bg-primary text-primary-foreground hover:brightness-110"
+          : "border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20",
+      )}
     >
       <Swords className="h-3.5 w-3.5" />
-      Quiz
+      {isCompleted ? "Retry Quiz" : "Start Quiz"}
     </Link>
   );
 }
 
 export function TopicChecklist({
   topics,
-  subjectId,
-  chapterId,
 }: {
   topics: Topic[];
-  subjectId: string;
-  chapterId: string;
+  subjectId?: string;
+  chapterId?: string;
 }) {
-  const toggle = useToggleTopicMutation(subjectId, chapterId);
-  const startSession = useStartSessionMutation();
-
   return (
     <ul className="space-y-2">
       {topics.map((topic) => {
-        const pending =
-          toggle.isPending && toggle.variables?.topicId === topic.id;
-        const starting =
-          startSession.isPending && startSession.variables === topic.id;
+        const locked = Boolean(topic.is_locked);
         return (
           <li
             key={topic.id}
@@ -65,61 +80,67 @@ export function TopicChecklist({
               "rounded-xl border px-3 py-3 transition",
               topic.is_completed
                 ? "border-primary/30 bg-primary/10"
-                : "border-border bg-card",
+                : topic.is_current
+                  ? "border-accent/40 bg-accent/5"
+                  : locked
+                    ? "border-border/70 bg-muted/30 opacity-80"
+                    : "border-border bg-card",
             )}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  toggle.mutate({
-                    topicId: topic.id,
-                    isCompleted: !topic.is_completed,
-                  })
-                }
-                className="flex min-w-0 flex-1 items-center gap-3 text-left"
-              >
+              <div className="flex min-w-0 flex-1 items-center gap-3">
                 <span
                   className={cn(
                     "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border",
                     topic.is_completed
                       ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background",
+                      : locked
+                        ? "border-border bg-muted text-muted-foreground"
+                        : "border-border bg-background",
                   )}
                 >
                   {topic.is_completed ? (
                     <Check className="h-3.5 w-3.5" />
+                  ) : locked ? (
+                    <Lock className="h-3.5 w-3.5" />
                   ) : null}
                 </span>
-                <span
-                  className={cn(
-                    "text-sm font-medium",
-                    topic.is_completed && "text-primary",
-                  )}
-                >
-                  {topic.title}
+                <span className="min-w-0">
+                  <span
+                    className={cn(
+                      "block text-sm font-medium",
+                      topic.is_completed && "text-primary",
+                      locked && "text-muted-foreground",
+                    )}
+                  >
+                    {topic.title}
+                  </span>
+                  {topic.is_completed ? (
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                      ✓ Completed
+                    </span>
+                  ) : null}
+                  {topic.is_current ? (
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-accent">
+                      Current topic
+                    </span>
+                  ) : null}
+                  {locked ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      🔒 Locked — complete previous topic quiz to unlock
+                    </span>
+                  ) : null}
                 </span>
-              </button>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
-                <TopicQuizLink topicId={topic.id} />
-                <button
-                  type="button"
-                  disabled={starting || startSession.isPending}
-                  onClick={() => startSession.mutate(topic.id)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-70"
-                >
-                  <Play className="h-3.5 w-3.5" />
-                  {starting ? "Starting..." : "Start Session"}
-                </button>
+                <TopicQuizLink
+                  topicId={topic.id}
+                  locked={locked}
+                  isCurrent={Boolean(topic.is_current)}
+                  isCompleted={Boolean(topic.is_completed)}
+                />
               </div>
             </div>
-            {startSession.isError && startSession.variables === topic.id ? (
-              <p className="mt-2 flex items-start gap-1 text-xs text-destructive">
-                <X className="mt-0.5 h-3 w-3 shrink-0" />
-                {getStudyErrorMessage(startSession.error)}
-              </p>
-            ) : null}
           </li>
         );
       })}

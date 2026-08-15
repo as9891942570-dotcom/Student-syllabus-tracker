@@ -19,6 +19,8 @@ class TopicResponse(BaseModel):
     sort_order: int
     is_completed: bool = False
     completed_at: Optional[datetime] = None
+    is_locked: bool = False
+    is_current: bool = False
 
 
 class ChapterResponse(BaseModel):

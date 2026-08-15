@@ -31,6 +31,8 @@ from app.schemas.quiz import (
 )
 from app.schemas.syllabus import TopicProgressUpdate
 from app.services.academic_seed import seed_academic_lookups
+from app.services.coins import award_coins, coin_reward_per_topic
+from app.services.level import calculate_level_progress
 from app.services.quiz_seed import ensure_quiz_for_topic, ensure_quiz_has_questions
 from app.services.syllabus import SyllabusService
 from app.services.syllabus_seed import seed_syllabus_for_scope
@@ -61,7 +63,7 @@ def calculate_quiz_xp(*, percentage: int, correct_count: int) -> int:
     """
     base = 20
     percentage_bonus = int((max(0, min(percentage, 100)) / 100) * 30)
-    correct_bonus = min(max(correct_count, 0), 10) * 2
+    correct_bonus = min(max(correct_count, 0), 20) * 2
     perfect_bonus = 15 if percentage == 100 else 0
     return base + percentage_bonus + correct_bonus + perfect_bonus
 
@@ -99,6 +101,7 @@ class QuizService:
 
         await ensure_quiz_for_topic(self.session, topic.id, topic.title)
         quizzes = await self.quizzes.list_for_topic(topic_id)
+        populated = [q for q in quizzes if q.is_active and q.questions]
         return [
             QuizSummary(
                 id=q.id,
@@ -108,7 +111,7 @@ class QuizService:
                 question_count=len(q.questions),
                 is_active=q.is_active,
             )
-            for q in quizzes
+            for q in populated
         ]
 
     async def get_quiz(self, user: User, quiz_id: UUID) -> QuizDetail:
@@ -127,6 +130,7 @@ class QuizService:
             raise NotFoundError("Quiz not found")
         self.syllabus._assert_subject_in_scope(profile, quiz.topic.chapter.subject)
         quiz = await ensure_quiz_has_questions(self.session, quiz)
+        await self.syllabus.assert_topic_unlocked(user, quiz.topic_id)
 
         if not quiz.questions:
             raise ValidationAppError("Quiz has no questions")
@@ -186,6 +190,10 @@ class QuizService:
         index = min(max(attempt.current_question_index, 0), len(questions) - 1)
         question = questions[index]
         prior = await self.answers.get_for_attempt_question(attempt.id, question.id)
+        correct_option_id = None
+        if prior is not None:
+            correct = next((o for o in question.options if o.is_correct), None)
+            correct_option_id = correct.id if correct else None
         return QuizQuestionPublic(
             id=question.id,
             prompt=question.prompt,
@@ -198,6 +206,7 @@ class QuizService:
             ],
             already_answered=prior is not None,
             selected_option_id=prior.selected_option_id if prior else None,
+            correct_option_id=correct_option_id,
         )
 
     async def submit_answer(
@@ -226,6 +235,7 @@ class QuizService:
             raise ConflictError("This question was already answered")
 
         is_correct = bool(option.is_correct)
+        correct_option = next(o for o in question.options if o.is_correct)
         answer = QuizAnswer(
             attempt_id=attempt.id,
             question_id=question.id,
@@ -245,6 +255,7 @@ class QuizService:
             question_id=question.id,
             selected_option_id=option.id,
             is_correct=is_correct,
+            correct_option_id=correct_option.id,
             attempt_id=attempt.id,
             answered_count=attempt.answered_count,
             correct_count=attempt.correct_count,
@@ -339,6 +350,7 @@ class QuizService:
         loaded = await self.attempts.get_for_user(attempt.id, user.id)
         assert loaded is not None
         attempt = loaded
+        topic_id = attempt.quiz.topic_id
 
         if attempt.status in {"completed", "expired"}:
             return await self._attempt_response(attempt, user)
@@ -350,7 +362,20 @@ class QuizService:
             total=total,
         )
         score = calculate_quiz_score(correct=attempt.correct_count, total=total)
+        passed = percentage >= TOPIC_COMPLETE_PERCENTAGE
         xp = calculate_quiz_xp(percentage=percentage, correct_count=attempt.correct_count)
+
+        prior_progress = await self.progress.get_for_user_topic(user.id, topic_id)
+        already_topic_completed = bool(prior_progress and prior_progress.is_completed)
+        already_awarded = await self.attempts.has_prior_xp_for_quiz(
+            user.id,
+            attempt.quiz_id,
+            exclude_attempt_id=attempt.id,
+        )
+        first_success = passed and not already_topic_completed and not already_awarded
+        if not first_success:
+            xp = 0
+        xp_awarded = first_success and xp > 0
 
         attempt.status = status
         attempt.ended_at = ended_at
@@ -364,25 +389,59 @@ class QuizService:
             started = started.replace(tzinfo=timezone.utc)
         duration = max(int((ended_at - started).total_seconds()), 0)
 
-        await award_xp(
-            self.session,
-            user_id=user.id,
-            xp_amount=xp,
-            study_seconds=duration,
-            count_as_session=False,
-        )
+        if xp_awarded:
+            await award_xp(
+                self.session,
+                user_id=user.id,
+                xp_amount=xp,
+                study_seconds=duration,
+                count_as_session=False,
+            )
 
-        topic_completed = percentage >= TOPIC_COMPLETE_PERCENTAGE
+        topic_completed = passed
+        next_topic_unlocked = False
+        next_topic_id = None
+        next_topic_title = None
+        coins = 0
+        coins_awarded = False
+
         if topic_completed:
+            # Coins only on the first successful topic completion (>=60%).
+            if not already_topic_completed:
+                coins = coin_reward_per_topic()
+                if coins > 0:
+                    await award_coins(self.session, user_id=user.id, coins_amount=coins)
+                    coins_awarded = True
+            attempt.coins_earned = coins
+            await self.attempts.update(attempt)
+
             await self.syllabus.set_topic_progress(
                 user,
-                attempt.quiz.topic_id,
+                topic_id,
                 TopicProgressUpdate(is_completed=True),
+                enforce_unlock=False,
             )
+            nxt = await self.syllabus.get_next_topic_after(user, topic_id)
+            if nxt is not None:
+                next_topic_id = nxt.id
+                next_topic_title = nxt.title
+                next_topic_unlocked = not nxt.is_locked
+        else:
+            attempt.coins_earned = 0
+            await self.attempts.update(attempt)
 
         refreshed = await self.attempts.get_for_user(attempt.id, user.id)
         assert refreshed is not None
-        return await self._attempt_response(refreshed, user, topic_completed=topic_completed)
+        return await self._attempt_response(
+            refreshed,
+            user,
+            topic_completed=topic_completed,
+            next_topic_unlocked=next_topic_unlocked,
+            next_topic_id=next_topic_id,
+            next_topic_title=next_topic_title,
+            xp_awarded=xp_awarded,
+            coins_awarded=coins_awarded,
+        )
 
     def _quiz_detail(self, quiz: Quiz) -> QuizDetail:
         topic = quiz.topic
@@ -408,9 +467,16 @@ class QuizService:
         user: User,
         *,
         topic_completed: bool | None = None,
+        next_topic_unlocked: bool = False,
+        next_topic_id=None,
+        next_topic_title: str | None = None,
+        xp_awarded: bool = True,
+        coins_awarded: bool = False,
     ) -> QuizAttemptResponse:
         profile = await self.profiles.get_by_user_id(user.id)
         total_xp = profile.total_xp if profile else 0
+        total_coins = profile.total_coins if profile else 0
+        level = calculate_level_progress(total_xp)
         quiz = attempt.quiz
         topic = quiz.topic
         chapter = topic.chapter
@@ -419,6 +485,17 @@ class QuizService:
         if topic_completed is None:
             row = await self.progress.get_for_user_topic(user.id, topic.id)
             topic_completed = bool(row and row.is_completed)
+
+        if (
+            attempt.status in {"completed", "expired"}
+            and topic_completed
+            and next_topic_id is None
+        ):
+            nxt = await self.syllabus.get_next_topic_after(user, topic.id)
+            if nxt is not None:
+                next_topic_id = nxt.id
+                next_topic_title = nxt.title
+                next_topic_unlocked = not nxt.is_locked
 
         now = datetime.now(timezone.utc)
         expires = attempt.expires_at
@@ -446,7 +523,22 @@ class QuizService:
             percentage=attempt.percentage,
             xp_earned=attempt.xp_earned,
             total_xp=total_xp,
+            coins_earned=attempt.coins_earned or 0,
+            total_coins=total_coins or 0,
             topic_completed=bool(topic_completed),
+            next_topic_unlocked=next_topic_unlocked,
+            next_topic_id=next_topic_id,
+            next_topic_title=next_topic_title,
+            xp_awarded=xp_awarded if attempt.status != "active" else False,
+            coins_awarded=(
+                (coins_awarded or (attempt.coins_earned or 0) > 0)
+                if attempt.status != "active"
+                else False
+            ),
+            level=level.level,
+            level_floor_xp=level.level_floor_xp,
+            next_level_xp=level.next_level_xp,
+            level_progress_percentage=level.level_progress_percentage,
             started_at=attempt.started_at,
             expires_at=attempt.expires_at,
             ended_at=attempt.ended_at,

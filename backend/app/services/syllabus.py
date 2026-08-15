@@ -35,6 +35,24 @@ from app.services.academic_seed import seed_academic_lookups
 from app.services.syllabus_seed import seed_syllabus_for_scope
 
 
+def _visible_subjects(subjects: list[Subject]) -> list[Subject]:
+    return [subject for subject in subjects if subject.is_active]
+
+
+def _visible_chapters(subject: Subject) -> list[Chapter]:
+    return sorted(
+        [chapter for chapter in subject.chapters if chapter.is_active],
+        key=lambda chapter: (chapter.sort_order, chapter.title),
+    )
+
+
+def _visible_topics(chapter: Chapter) -> list[Topic]:
+    return sorted(
+        [topic for topic in chapter.topics if topic.is_active],
+        key=lambda topic: (topic.sort_order, topic.title),
+    )
+
+
 def _pct(completed: int, total: int) -> int:
     if total <= 0:
         return 0
@@ -80,25 +98,41 @@ class SyllabusService:
     ) -> dict[UUID, StudentTopicProgress]:
         topic_ids = [
             topic.id
-            for subject in subjects
-            for chapter in subject.chapters
-            for topic in chapter.topics
+            for subject in _visible_subjects(subjects)
+            for chapter in _visible_chapters(subject)
+            for topic in _visible_topics(chapter)
         ]
         return await self.progress.map_for_user(user_id, topic_ids)
 
-    def _topic_response(
+    def _sorted_topics(self, topics: list[Topic]) -> list[Topic]:
+        return sorted(topics, key=lambda t: (t.sort_order, t.title))
+
+    def _topic_responses_for_chapter(
         self,
-        topic: Topic,
+        topics: list[Topic],
         progress_map: dict[UUID, StudentTopicProgress],
-    ) -> TopicResponse:
-        row = progress_map.get(topic.id)
-        return TopicResponse(
-            id=topic.id,
-            title=topic.title,
-            sort_order=topic.sort_order,
-            is_completed=bool(row and row.is_completed),
-            completed_at=row.completed_at if row else None,
-        )
+    ) -> list[TopicResponse]:
+        """Apply sequential unlock: topic N unlocks when topic N-1 is completed."""
+        responses: list[TopicResponse] = []
+        previous_completed = True
+        for topic in self._sorted_topics(topics):
+            row = progress_map.get(topic.id)
+            is_completed = bool(row and row.is_completed)
+            is_locked = not previous_completed
+            is_current = (not is_locked) and (not is_completed)
+            responses.append(
+                TopicResponse(
+                    id=topic.id,
+                    title=topic.title,
+                    sort_order=topic.sort_order,
+                    is_completed=is_completed,
+                    completed_at=row.completed_at if row else None,
+                    is_locked=is_locked,
+                    is_current=is_current,
+                ),
+            )
+            previous_completed = is_completed
+        return responses
 
     def _chapter_response(
         self,
@@ -107,9 +141,10 @@ class SyllabusService:
         *,
         include_topics: bool,
     ) -> ChapterResponse:
-        topic_responses = [
-            self._topic_response(topic, progress_map) for topic in chapter.topics
-        ]
+        topic_responses = self._topic_responses_for_chapter(
+            _visible_topics(chapter),
+            progress_map,
+        )
         completed = sum(1 for t in topic_responses if t.is_completed)
         total = len(topic_responses)
         return ChapterResponse(
@@ -132,7 +167,7 @@ class SyllabusService:
     ) -> SubjectDetailResponse | SubjectResponse:
         chapters = [
             self._chapter_response(ch, progress_map, include_topics=include_topics)
-            for ch in subject.chapters
+            for ch in _visible_chapters(subject)
         ]
         topic_count = sum(c.topic_count for c in chapters)
         completed = sum(c.completed_topic_count for c in chapters)
@@ -168,7 +203,7 @@ class SyllabusService:
         profile = await self._require_profile(user)
         await self._ensure_subjects(profile)
         subject = await self.subjects.get_with_tree(subject_id)
-        if subject is None:
+        if subject is None or not subject.is_active:
             raise NotFoundError("Subject not found")
         self._assert_subject_in_scope(profile, subject)
         progress_map = await self._progress_map(user.id, [subject])
@@ -185,12 +220,12 @@ class SyllabusService:
         profile = await self._require_profile(user)
         await self._ensure_subjects(profile)
         chapter = await self.chapters.get_with_topics(chapter_id)
-        if chapter is None:
+        if chapter is None or not chapter.is_active:
             raise NotFoundError("Chapter not found")
         self._assert_subject_in_scope(profile, chapter.subject)
         progress_map = await self.progress.map_for_user(
             user.id,
-            [t.id for t in chapter.topics],
+            [t.id for t in _visible_topics(chapter)],
         )
         return self._chapter_response(chapter, progress_map, include_topics=True)
 
@@ -233,18 +268,77 @@ class SyllabusService:
             subjects=subjects,
         )
 
+    async def get_topic_lock_state(self, user: User, topic_id: UUID) -> TopicResponse:
+        """Return topic with lock/current flags for the authenticated student."""
+        profile = await self._require_profile(user)
+        await self._ensure_subjects(profile)
+        topic = await self.topics.get_with_chapter(topic_id)
+        if topic is None or not topic.is_active:
+            raise NotFoundError("Topic not found")
+        self._assert_subject_in_scope(profile, topic.chapter.subject)
+        chapter = await self.chapters.get_with_topics(topic.chapter_id)
+        assert chapter is not None
+        visible = _visible_topics(chapter)
+        progress_map = await self.progress.map_for_user(
+            user.id,
+            [t.id for t in visible],
+        )
+        for item in self._topic_responses_for_chapter(visible, progress_map):
+            if item.id == topic_id:
+                return item
+        raise NotFoundError("Topic not found")
+
+    async def assert_topic_unlocked(self, user: User, topic_id: UUID) -> TopicResponse:
+        state = await self.get_topic_lock_state(user, topic_id)
+        if state.is_locked:
+            raise ForbiddenError(
+                "This topic is locked. Complete the previous topic's quiz first.",
+            )
+        return state
+
+    async def get_next_topic_after(
+        self,
+        user: User,
+        topic_id: UUID,
+    ) -> Optional[TopicResponse]:
+        profile = await self._require_profile(user)
+        await self._ensure_subjects(profile)
+        topic = await self.topics.get_with_chapter(topic_id)
+        if topic is None or not topic.is_active:
+            raise NotFoundError("Topic not found")
+        chapter = await self.chapters.get_with_topics(topic.chapter_id)
+        assert chapter is not None
+        visible = _visible_topics(chapter)
+        progress_map = await self.progress.map_for_user(
+            user.id,
+            [t.id for t in visible],
+        )
+        responses = self._topic_responses_for_chapter(visible, progress_map)
+        found = False
+        for item in responses:
+            if found:
+                return item
+            if item.id == topic_id:
+                found = True
+        return None
+
     async def set_topic_progress(
         self,
         user: User,
         topic_id: UUID,
         payload: TopicProgressUpdate,
+        *,
+        enforce_unlock: bool = True,
     ) -> TopicResponse:
         profile = await self._require_profile(user)
         await self._ensure_subjects(profile)
         topic = await self.topics.get_with_chapter(topic_id)
-        if topic is None:
+        if topic is None or not topic.is_active:
             raise NotFoundError("Topic not found")
         self._assert_subject_in_scope(profile, topic.chapter.subject)
+
+        if payload.is_completed and enforce_unlock:
+            await self.assert_topic_unlocked(user, topic_id)
 
         row = await self.progress.get_for_user_topic(user.id, topic_id)
         now = datetime.now(timezone.utc)
@@ -261,13 +355,7 @@ class SyllabusService:
             row.completed_at = now if payload.is_completed else None
             await self.progress.update(row)
 
-        return TopicResponse(
-            id=topic.id,
-            title=topic.title,
-            sort_order=topic.sort_order,
-            is_completed=row.is_completed,
-            completed_at=row.completed_at,
-        )
+        return await self.get_topic_lock_state(user, topic_id)
 
     def _assert_subject_in_scope(self, profile: StudentProfile, subject: Subject) -> None:
         if subject.board_id != profile.board_id or subject.class_id != profile.class_id:

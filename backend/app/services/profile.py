@@ -18,12 +18,14 @@ from app.repositories.academic import BoardRepository, ClassRepository, StreamRe
 from app.repositories.profile import StudentProfileRepository
 from app.repositories.user import UserRepository
 from app.schemas.profile import (
+    AcademicChangeRequest,
     BoardResponse,
     ClassResponse,
     ProfileResponse,
     ProfileUpdateRequest,
     StreamResponse,
 )
+from app.services.level import calculate_level_progress
 from app.services.academic_seed import seed_academic_lookups
 
 
@@ -77,6 +79,8 @@ class ProfileService:
         self,
         user: User,
         payload: ProfileUpdateRequest,
+        *,
+        allow_academic_change: bool = False,
     ) -> ProfileResponse:
         await self.ensure_lookups()
         profile = await self.get_or_create_profile(user)
@@ -87,6 +91,17 @@ class ProfileService:
 
         if payload.mobile is not None:
             profile.mobile = payload.mobile
+
+        academic_locked = self._academic_profile_locked(profile) and not allow_academic_change
+        if academic_locked:
+            self._reject_academic_changes(profile, payload)
+
+        if academic_locked:
+            # Name/photo/mobile remain editable; board/class/stream stay fixed.
+            payload = ProfileUpdateRequest(
+                full_name=payload.full_name,
+                mobile=payload.mobile,
+            )
 
         if payload.board_id is not None:
             board = await self.boards.get(payload.board_id)
@@ -137,6 +152,55 @@ class ProfileService:
         refreshed = await self.profiles.get_by_user_id(user.id)
         assert refreshed is not None
         return self._to_response(refreshed)
+
+    async def change_academic_identity(
+        self,
+        user: User,
+        payload: AcademicChangeRequest,
+    ) -> ProfileResponse:
+        if not payload.confirm:
+            raise ValidationAppError(
+                "Confirm that you want to change board, class, or stream. "
+                "This switches the assigned syllabus.",
+            )
+        return await self.update_profile(
+            user,
+            ProfileUpdateRequest(
+                board_id=payload.board_id,
+                class_id=payload.class_id,
+                stream_id=payload.stream_id,
+                clear_stream=payload.clear_stream,
+            ),
+            allow_academic_change=True,
+        )
+
+    @staticmethod
+    def _academic_profile_locked(profile: StudentProfile) -> bool:
+        """Board/class/stream cannot change once initially saved."""
+        if profile.board_id is None or profile.class_id is None:
+            return False
+        school_class = profile.school_class
+        if school_class is not None and school_class.requires_stream:
+            return profile.stream_id is not None
+        return True
+
+    @staticmethod
+    def _reject_academic_changes(
+        profile: StudentProfile,
+        payload: ProfileUpdateRequest,
+    ) -> None:
+        message = (
+            "Board, class, and stream cannot be changed from the normal profile page. "
+            "Use the explicit academic-change confirmation flow."
+        )
+        if payload.board_id is not None and payload.board_id != profile.board_id:
+            raise ValidationAppError(message)
+        if payload.class_id is not None and payload.class_id != profile.class_id:
+            raise ValidationAppError(message)
+        if payload.clear_stream and profile.stream_id is not None:
+            raise ValidationAppError(message)
+        if payload.stream_id is not None and payload.stream_id != profile.stream_id:
+            raise ValidationAppError(message)
 
     async def upload_photo(self, user: User, file: UploadFile) -> ProfileResponse:
         if not file.content_type or file.content_type not in self.settings.allowed_image_types:
@@ -212,6 +276,7 @@ class ProfileService:
             stream_id=profile.stream_id,
             requires_stream=requires_stream,
         )
+        level = calculate_level_progress(profile.total_xp or 0)
         return ProfileResponse(
             id=profile.id,
             user_id=profile.user_id,
@@ -233,9 +298,17 @@ class ProfileService:
             stream=(
                 StreamResponse.model_validate(profile.stream) if profile.stream else None
             ),
-            total_xp=profile.total_xp or 0,
+            total_xp=level.total_xp,
+            total_coins=profile.total_coins or 0,
+            level=level.level,
+            level_floor_xp=level.level_floor_xp,
+            next_level_xp=level.next_level_xp,
+            xp_into_level=level.xp_into_level,
+            xp_needed_for_next=level.xp_needed_for_next,
+            level_progress_percentage=level.level_progress_percentage,
             completion_percentage=percentage,
             is_complete=is_complete,
+            academic_locked=self._academic_profile_locked(profile),
             missing_fields=missing,
             created_at=profile.created_at,
             updated_at=profile.updated_at,

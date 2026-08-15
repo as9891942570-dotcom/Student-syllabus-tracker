@@ -37,9 +37,12 @@ class AuthService:
         self.settings = get_settings()
 
     async def register(self, payload: RegisterRequest) -> TokenResponse:
-        existing = await self.users.get_by_email(payload.email)
-        if existing is not None:
-            raise ConflictError("An account with this email already exists")
+        existing = await self.users.list_by_email(payload.email)
+        for account in existing:
+            if verify_password(payload.password, account.password_hash):
+                raise ConflictError(
+                    "An account with this email and password already exists",
+                )
 
         user = User(
             email=payload.email.lower(),
@@ -51,12 +54,25 @@ class AuthService:
         return await self._issue_tokens(user)
 
     async def login(self, payload: LoginRequest) -> TokenResponse:
-        user = await self.users.get_by_email(payload.email)
-        if user is None or not verify_password(payload.password, user.password_hash):
-            raise UnauthorizedError("Invalid email or password")
-        if not user.is_active:
+        if payload.user_id is not None:
+            matched = await self.users.get_by_id(payload.user_id)
+            if matched is None or not verify_password(payload.password, matched.password_hash):
+                raise UnauthorizedError("Invalid account or password")
+        else:
+            candidates = await self.users.list_by_email(payload.email or "")
+            matched = next(
+                (
+                    account
+                    for account in candidates
+                    if verify_password(payload.password, account.password_hash)
+                ),
+                None,
+            )
+            if matched is None:
+                raise UnauthorizedError("Invalid email or password")
+        if not matched.is_active:
             raise UnauthorizedError("Account is inactive")
-        return await self._issue_tokens(user)
+        return await self._issue_tokens(matched)
 
     async def refresh(self, refresh_token: Optional[str]) -> TokenResponse:
         if not refresh_token:

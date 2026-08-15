@@ -11,7 +11,8 @@ class HealthService:
         settings = get_settings()
         db_ok = await check_database_connection()
         redis_ok = await check_redis_connection()
-        status = "healthy" if db_ok and redis_ok else "degraded"
+        # Redis is an optional cache. Database availability determines API health.
+        status = "healthy" if db_ok else "unhealthy"
         return HealthResponse(
             status=status,
             app=settings.app_name,

@@ -18,10 +18,6 @@ export const queryKeys = {
     completion: ["syllabus", "completion"] as const,
     structure: ["syllabus", "structure"] as const,
   },
-  study: {
-    active: ["study", "active"] as const,
-    session: (id: string) => ["study", "session", id] as const,
-  },
   quiz: {
     topic: (topicId: string) => ["quiz", "topic", topicId] as const,
     detail: (quizId: string) => ["quiz", "detail", quizId] as const,
@@ -29,5 +25,8 @@ export const queryKeys = {
     attempt: (id: string) => ["quiz", "attempt", id] as const,
     question: (id: string) => ["quiz", "question", id] as const,
     history: ["quiz", "history"] as const,
+  },
+  progression: {
+    me: ["progression", "me"] as const,
   },
 };

@@ -1,4 +1,4 @@
-"""Shared XP awarding used by study sessions and quizzes."""
+"""Shared XP awarding used by quizzes (and daily activity tracking)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.daily_activity import DailyActivity
+from app.repositories.daily_activity import DailyActivityRepository
 from app.repositories.profile import StudentProfileRepository
-from app.repositories.study_session import DailyActivityRepository
 
 
 async def award_xp(

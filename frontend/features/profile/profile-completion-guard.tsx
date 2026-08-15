@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Skeleton } from "@/components/common/skeleton";
 import { useProfileQuery } from "@/features/profile/hooks";
 
-const PROFILE_ALLOWLIST = ["/profile/setup", "/profile/edit"];
+const PROFILE_ALLOWLIST = ["/profile/setup", "/profile/edit", "/switch-account"];
 
 export function ProfileCompletionGuard({
   children,

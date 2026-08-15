@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import ForbiddenError
 from app.dependencies.auth import get_current_user
 from app.dependencies.db import get_db
 from app.models.user import User
@@ -72,8 +73,7 @@ async def update_topic_progress(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> TopicResponse:
-    return await SyllabusService(session).set_topic_progress(
-        current_user,
-        topic_id,
-        payload,
+    raise ForbiddenError(
+        "Topics can only be completed by passing the topic quiz (60% or higher). "
+        "Clicking a topic does not unlock it.",
     )

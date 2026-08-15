@@ -152,3 +152,22 @@ async def test_profile_api_flow(client: AsyncClient) -> None:
     assert body["completion_percentage"] == 100
     assert body["school_class"]["grade"] == 8
     assert body["stream"] is None
+    assert body["academic_locked"] is True
+
+    classes = (await client.get("/api/v1/classes", headers=headers)).json()
+    class_9 = next(c for c in classes if c["grade"] == 9)
+    blocked = await client.put(
+        "/api/v1/profile/me",
+        headers=headers,
+        json={"class_id": class_9["id"]},
+    )
+    assert blocked.status_code == 422
+
+    name_ok = await client.put(
+        "/api/v1/profile/me",
+        headers=headers,
+        json={"full_name": "Updated Name"},
+    )
+    assert name_ok.status_code == 200
+    assert name_ok.json()["full_name"] == "Updated Name"
+    assert name_ok.json()["school_class"]["grade"] == 8
