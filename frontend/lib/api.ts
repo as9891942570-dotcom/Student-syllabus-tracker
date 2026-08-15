@@ -8,10 +8,11 @@ import type {
 } from "@/types/auth";
 
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api/v1";
+  process.env.NEXT_PUBLIC_API_URL ?? "https://student-syllabus-tracker-v1sg.onrender.com/api/v1";
 
 export const API_ORIGIN =
-  process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_API_ORIGIN ??
+  "https://student-syllabus-tracker-v1sg.onrender.com";
 
 export function resolveMediaUrl(path?: string | null): string | null {
   if (!path) return null;
