@@ -40,16 +40,6 @@ class ProfileUpdateRequest(BaseModel):
     stream_id: Optional[UUID] = None
     clear_stream: bool = False
 
-
-class AcademicChangeRequest(BaseModel):
-    """Explicit board/class/stream change. Normal profile PUT cannot do this."""
-
-    confirm: bool = False
-    board_id: UUID
-    class_id: UUID
-    stream_id: Optional[UUID] = None
-    clear_stream: bool = False
-
     @field_validator("mobile")
     @classmethod
     def validate_mobile(cls, value: Optional[str]) -> Optional[str]:
@@ -59,6 +49,16 @@ class AcademicChangeRequest(BaseModel):
         if len(digits) < 10 or len(digits) > 15:
             raise ValueError("Mobile number must contain 10–15 digits")
         return digits
+
+
+class AcademicChangeRequest(BaseModel):
+    """Explicit board/class/stream change. Normal profile PUT cannot do this."""
+
+    confirm: bool = False
+    board_id: UUID
+    class_id: UUID
+    stream_id: Optional[UUID] = None
+    clear_stream: bool = False
 
 
 class ProfileResponse(BaseModel):
