@@ -308,9 +308,14 @@ class QuizService:
                 status=a.status,
                 score=a.score,
                 percentage=a.percentage,
+                passed=(
+                    a.status in {"completed", "expired"}
+                    and a.percentage >= TOPIC_COMPLETE_PERCENTAGE
+                ),
                 xp_earned=a.xp_earned,
                 total_questions=a.total_questions,
                 correct_count=a.correct_count,
+                incorrect_count=a.incorrect_count,
                 started_at=a.started_at,
                 ended_at=a.ended_at,
                 completed=a.status in {"completed", "expired"},
@@ -470,8 +475,8 @@ class QuizService:
         next_topic_unlocked: bool = False,
         next_topic_id=None,
         next_topic_title: str | None = None,
-        xp_awarded: bool = True,
-        coins_awarded: bool = False,
+        xp_awarded: bool | None = None,
+        coins_awarded: bool | None = None,
     ) -> QuizAttemptResponse:
         profile = await self.profiles.get_by_user_id(user.id)
         total_xp = profile.total_xp if profile else 0
@@ -502,6 +507,16 @@ class QuizService:
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
         remaining = max(int((expires - now).total_seconds()), 0) if attempt.status == "active" else 0
+        finished = attempt.status in {"completed", "expired"}
+        passed = finished and attempt.percentage >= TOPIC_COMPLETE_PERCENTAGE
+        if attempt.status == "active":
+            xp_flag = False
+            coins_flag = False
+        else:
+            xp_flag = attempt.xp_earned > 0 if xp_awarded is None else xp_awarded
+            coins_flag = (
+                (attempt.coins_earned or 0) > 0 if coins_awarded is None else coins_awarded
+            )
 
         return QuizAttemptResponse(
             id=attempt.id,
@@ -521,6 +536,7 @@ class QuizService:
             incorrect_count=attempt.incorrect_count,
             score=attempt.score,
             percentage=attempt.percentage,
+            passed=passed,
             xp_earned=attempt.xp_earned,
             total_xp=total_xp,
             coins_earned=attempt.coins_earned or 0,
@@ -529,12 +545,8 @@ class QuizService:
             next_topic_unlocked=next_topic_unlocked,
             next_topic_id=next_topic_id,
             next_topic_title=next_topic_title,
-            xp_awarded=xp_awarded if attempt.status != "active" else False,
-            coins_awarded=(
-                (coins_awarded or (attempt.coins_earned or 0) > 0)
-                if attempt.status != "active"
-                else False
-            ),
+            xp_awarded=xp_flag,
+            coins_awarded=coins_flag,
             level=level.level,
             level_floor_xp=level.level_floor_xp,
             next_level_xp=level.next_level_xp,

@@ -19,6 +19,7 @@ from . import (
     mathematics_12,
     mathematics_12_extra,
     middle_school,
+    physics_11,
     physics_12_extra,
 )
 
@@ -33,6 +34,7 @@ def register_all() -> None:
     english_12.register()
     english_12_extra.register()
     english_11.register()
+    physics_11.register()
     physics_12_extra.register()
     biology.register()
     middle_school.register()

@@ -55,8 +55,11 @@ export type QuizAttempt = {
   answered_count: number;
   correct_count: number;
   incorrect_count: number;
+  correct_answers?: number;
+  wrong_answers?: number;
   score: number;
   percentage: number;
+  passed?: boolean;
   xp_earned: number;
   total_xp: number;
   coins_earned?: number;
@@ -97,9 +100,11 @@ export type QuizHistoryItem = {
   status: string;
   score: number;
   percentage: number;
+  passed?: boolean;
   xp_earned: number;
   total_questions: number;
   correct_count: number;
+  incorrect_count?: number;
   started_at: string;
   ended_at?: string | null;
   completed: boolean;

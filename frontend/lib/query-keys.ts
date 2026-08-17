@@ -25,6 +25,7 @@ export const queryKeys = {
     attempt: (id: string) => ["quiz", "attempt", id] as const,
     question: (id: string) => ["quiz", "question", id] as const,
     history: ["quiz", "history"] as const,
+    result: (id: string) => ["quiz", "attempt", id, "result"] as const,
   },
   progression: {
     me: ["progression", "me"] as const,

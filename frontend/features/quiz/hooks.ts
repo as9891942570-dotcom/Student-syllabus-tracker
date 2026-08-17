@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { ApiError, quizApi } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import type { QuizAttempt } from "@/types/quiz";
 
 export function useTopicQuizzesQuery(topicId: string) {
   return useQuery({
@@ -29,6 +30,30 @@ export function useQuizAttemptQuery(attemptId: string) {
     enabled: Boolean(attemptId),
     refetchInterval: (query) =>
       query.state.data?.status === "active" ? 5000 : false,
+  });
+}
+
+export function useQuizResultQuery(attemptId: string) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: queryKeys.quiz.result(attemptId),
+    queryFn: () => quizApi.result(attemptId),
+    enabled: Boolean(attemptId),
+    staleTime: 30_000,
+    initialData: () => {
+      const completed = (data: QuizAttempt | undefined) =>
+        data && data.status !== "active" ? data : undefined;
+      return (
+        completed(queryClient.getQueryData(queryKeys.quiz.result(attemptId))) ||
+        completed(queryClient.getQueryData(queryKeys.quiz.attempt(attemptId)))
+      );
+    },
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        return failureCount < 4;
+      }
+      return failureCount < 2;
+    },
   });
 }
 
@@ -93,18 +118,23 @@ export function useCompleteQuizMutation(attemptId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => quizApi.complete(attemptId),
-    onSuccess: async (attempt) => {
+    onSuccess: (attempt) => {
+      void queryClient.cancelQueries({
+        queryKey: queryKeys.quiz.attempt(attemptId),
+        exact: true,
+      });
       queryClient.setQueryData(queryKeys.quiz.attempt(attemptId), attempt);
+      queryClient.setQueryData(queryKeys.quiz.result(attemptId), attempt);
       queryClient.setQueryData(queryKeys.quiz.active, null);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.profile.me });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.syllabus.subjects });
-      await queryClient.invalidateQueries({
+      router.push(`/quiz/attempt/${attemptId}/result`);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.profile.me });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.syllabus.subjects });
+      void queryClient.invalidateQueries({
         queryKey: queryKeys.syllabus.completion,
       });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.quiz.history });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.progression.me });
-      await queryClient.invalidateQueries({ queryKey: ["syllabus", "chapters"] });
-      router.push(`/quiz/attempt/${attemptId}/result`);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.quiz.history });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.progression.me });
+      void queryClient.invalidateQueries({ queryKey: ["syllabus", "chapters"] });
     },
   });
 }
