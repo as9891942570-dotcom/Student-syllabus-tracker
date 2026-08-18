@@ -127,6 +127,7 @@ def register() -> None:
     register_subject_keywords("MATH", [
         (("prime", "fraction", "integer", "perimeter", "place value", "factor"), BANK_MATH_NUMBER),
         (("angle", "symmetry", "triangle", "circle", "square"), BANK_MATH_GEO),
+        (("square number", "cube number", "perfect square", "perfect cube"), BANK_MATH_NUMBER),
     ])
     register_keys(
         [

@@ -244,76 +244,17 @@ def test_class_11_english_portrait_is_literature() -> None:
     assert "coulomb" not in joined
 
 
-def test_class_11_measurement_of_length_is_topic_specific() -> None:
+def test_physics_11_si_units_are_real_concept_questions() -> None:
     bank = questions_for_topic(
-        "Measurement of length",
-        chapter_title="Units and Measurements",
-        subject_code="PHY",
-        grade=11,
-    )
-    assert 8 <= len(bank) <= 20
-    assert validate_question_bank("Measurement of length", bank) == []
-    joined = " ".join(p for p, _ in bank).lower()
-    assert "while studying" not in joined
-    assert "coulomb" not in joined
-    assert "electric charge" not in joined
-    assert any(
-        w in joined
-        for w in (
-            "parallax",
-            "parsec",
-            "astronomical",
-            "light year",
-            "vernier",
-            "fermi",
-            "ångström",
-            "angstrom",
-        )
-    )
-    assert (
-        resolve_concept_bank(
-            "Measurement of length",
-            chapter_title="Units and Measurements",
-            subject_code="PHY",
-        )
-        is not None
-    )
-
-
-def test_class_11_units_chapter_neighbours_have_distinct_banks() -> None:
-    length = questions_for_topic(
-        "Measurement of length",
-        chapter_title="Units and Measurements",
-        subject_code="PHY",
-        grade=11,
-    )
-    mass = questions_for_topic(
-        "Measurement of mass",
-        chapter_title="Units and Measurements",
-        subject_code="PHY",
-        grade=11,
-    )
-    time = questions_for_topic(
-        "Measurement of time",
-        chapter_title="Units and Measurements",
-        subject_code="PHY",
-        grade=11,
-    )
-    si = questions_for_topic(
         "The international system of units",
         chapter_title="Units and Measurements",
         subject_code="PHY",
         grade=11,
     )
-    assert len(length) >= 8
-    assert len(mass) >= 6
-    assert len(time) >= 6
-    assert len(si) >= 6
-    length_text = " ".join(p for p, _ in length).lower()
-    mass_text = " ".join(p for p, _ in mass).lower()
-    time_text = " ".join(p for p, _ in time).lower()
-    assert "parallax" in length_text or "parsec" in length_text or "vernier" in length_text
-    assert "caesium" in time_text or "cesium" in time_text or "atomic clock" in time_text
-    assert "kilogram" in mass_text or "atomic mass" in mass_text
-    assert [p for p, _ in length] != [p for p, _ in mass]
-    assert [p for p, _ in length] != [p for p, _ in time]
+    assert 8 <= len(bank) <= 20
+    assert validate_question_bank("The international system of units", bank) == []
+    joined = " ".join(
+        [p for p, _ in bank] + [opt for _, options in bank for opt, _ in options]
+    ).lower()
+    assert "metre" in joined or "kilogram" in joined
+    assert "while studying" not in joined

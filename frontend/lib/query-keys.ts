@@ -1,33 +1,44 @@
 export const queryKeys = {
   health: ["health"] as const,
-  me: ["me"] as const,
-  dashboard: ["dashboard"] as const,
+  me: (userId?: string | null) => ["me", userId ?? "anon"] as const,
+  dashboard: (userId?: string | null) => ["dashboard", userId ?? "anon"] as const,
   auth: {
-    me: ["auth", "me"] as const,
+    me: (userId?: string | null) => ["auth", "me", userId ?? "anon"] as const,
   },
   profile: {
-    me: ["profile", "me"] as const,
+    me: (userId?: string | null) => ["profile", "me", userId ?? "anon"] as const,
     boards: ["profile", "boards"] as const,
     classes: ["profile", "classes"] as const,
     streams: ["profile", "streams"] as const,
   },
   syllabus: {
-    subjects: ["syllabus", "subjects"] as const,
-    subject: (id: string) => ["syllabus", "subjects", id] as const,
-    chapter: (id: string) => ["syllabus", "chapters", id] as const,
-    completion: ["syllabus", "completion"] as const,
-    structure: ["syllabus", "structure"] as const,
+    subjects: (userId?: string | null) =>
+      ["syllabus", "subjects", userId ?? "anon"] as const,
+    subject: (id: string, userId?: string | null) =>
+      ["syllabus", "subjects", userId ?? "anon", id] as const,
+    chapter: (id: string, userId?: string | null) =>
+      ["syllabus", "chapters", userId ?? "anon", id] as const,
+    completion: (userId?: string | null) =>
+      ["syllabus", "completion", userId ?? "anon"] as const,
+    structure: (userId?: string | null) =>
+      ["syllabus", "structure", userId ?? "anon"] as const,
   },
   quiz: {
-    topic: (topicId: string) => ["quiz", "topic", topicId] as const,
-    detail: (quizId: string) => ["quiz", "detail", quizId] as const,
-    active: ["quiz", "active"] as const,
-    attempt: (id: string) => ["quiz", "attempt", id] as const,
-    question: (id: string) => ["quiz", "question", id] as const,
-    history: ["quiz", "history"] as const,
-    result: (id: string) => ["quiz", "attempt", id, "result"] as const,
+    topic: (topicId: string, userId?: string | null) =>
+      ["quiz", "topic", userId ?? "anon", topicId] as const,
+    detail: (quizId: string, userId?: string | null) =>
+      ["quiz", "detail", userId ?? "anon", quizId] as const,
+    active: (userId?: string | null) =>
+      ["quiz", "active", userId ?? "anon"] as const,
+    attempt: (id: string, userId?: string | null) =>
+      ["quiz", "attempt", userId ?? "anon", id] as const,
+    question: (id: string, userId?: string | null) =>
+      ["quiz", "question", userId ?? "anon", id] as const,
+    history: (userId?: string | null) =>
+      ["quiz", "history", userId ?? "anon"] as const,
   },
   progression: {
-    me: ["progression", "me"] as const,
+    me: (userId?: string | null) =>
+      ["progression", "me", userId ?? "anon"] as const,
   },
 };

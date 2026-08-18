@@ -7,14 +7,11 @@ import type {
   AuthUser,
 } from "@/types/auth";
 
-const DEFAULT_API_BASE_URL =
+export const API_BASE_URL =
   "https://student-syllabus-tracker-v1sg.onrender.com/api/v1";
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_BASE_URL
-).replace(/\/$/, "");
-
-export const API_ORIGIN = API_BASE_URL.replace(/\/api\/v1\/?$/, "");
+export const API_ORIGIN =
+  "https://student-syllabus-tracker-v1sg.onrender.com";
 
 export function resolveMediaUrl(path?: string | null): string | null {
   if (!path) return null;

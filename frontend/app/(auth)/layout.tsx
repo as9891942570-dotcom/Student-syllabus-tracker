@@ -9,7 +9,7 @@ export default function AuthLayout({
 }) {
   return (
     <div className="min-h-screen bg-hero-grid">
-      <div className="mx-auto flex w-full max-w-md flex-col px-4 py-8">
+      <div className="mx-auto flex w-full min-w-0 max-w-md flex-col px-4 py-8">
         <div className="mb-8 flex items-center justify-between">
           <Link
             href="/"

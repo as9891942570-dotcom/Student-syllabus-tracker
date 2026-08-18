@@ -14,6 +14,7 @@ from app.core.security import (
     decode_token,
     hash_password,
     verify_password,
+    verify_password_result,
 )
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -56,22 +57,33 @@ class AuthService:
     async def login(self, payload: LoginRequest) -> TokenResponse:
         if payload.user_id is not None:
             matched = await self.users.get_by_id(payload.user_id)
-            if matched is None or not verify_password(payload.password, matched.password_hash):
-                raise UnauthorizedError("Invalid account or password")
+            if matched is None:
+                raise UnauthorizedError("Invalid email or password")
+            valid, should_rehash = verify_password_result(
+                payload.password,
+                matched.password_hash,
+            )
+            if not valid:
+                raise UnauthorizedError("Invalid email or password")
         else:
             candidates = await self.users.list_by_email(payload.email or "")
-            matched = next(
-                (
-                    account
-                    for account in candidates
-                    if verify_password(payload.password, account.password_hash)
-                ),
-                None,
-            )
+            matched = None
+            should_rehash = False
+            for account in candidates:
+                valid, should_rehash = verify_password_result(
+                    payload.password,
+                    account.password_hash,
+                )
+                if valid:
+                    matched = account
+                    break
             if matched is None:
                 raise UnauthorizedError("Invalid email or password")
         if not matched.is_active:
             raise UnauthorizedError("Account is inactive")
+        if should_rehash:
+            matched.password_hash = hash_password(payload.password)
+            await self.users.update(matched)
         return await self._issue_tokens(matched)
 
     async def refresh(self, refresh_token: Optional[str]) -> TokenResponse:
@@ -116,8 +128,8 @@ class AuthService:
         # Stub: do not reveal whether the email exists.
         _ = await self.users.get_by_email(payload.email)
         return (
-            "If an account exists for this email, password reset instructions "
-            "will be sent shortly."
+            "Password reset by email is not available yet. "
+            "No reset message will be sent."
         )
 
     async def get_user(self, user_id: UUID) -> User:

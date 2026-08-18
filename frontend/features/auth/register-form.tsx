@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -7,6 +9,7 @@ import {
   getAuthErrorMessage,
   useRegisterMutation,
 } from "@/features/auth/hooks";
+import { PasswordInput } from "@/features/auth/password-input";
 import {
   registerSchema,
   type RegisterFormValues,
@@ -17,6 +20,7 @@ export function RegisterForm() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -28,7 +32,21 @@ export function RegisterForm() {
     },
   });
 
+  const email = watch("email");
+  const password = watch("password");
+  const confirmPassword = watch("confirm_password");
+  const fullName = watch("full_name");
+
+  useEffect(() => {
+    if (registerMutation.isError) {
+      registerMutation.reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clear error when fields change
+  }, [email, password, confirmPassword, fullName]);
+
   const onSubmit = handleSubmit((values) => {
+    if (registerMutation.isPending) return;
+    registerMutation.reset();
     registerMutation.mutate({
       full_name: values.full_name,
       email: values.email,
@@ -50,7 +68,7 @@ export function RegisterForm() {
           {...register("full_name")}
         />
         {errors.full_name ? (
-          <p className="mt-1 text-xs text-destructive">
+          <p className="mt-1 text-xs text-destructive" role="alert">
             {errors.full_name.message}
           </p>
         ) : null}
@@ -68,7 +86,9 @@ export function RegisterForm() {
           {...register("email")}
         />
         {errors.email ? (
-          <p className="mt-1 text-xs text-destructive">{errors.email.message}</p>
+          <p className="mt-1 text-xs text-destructive" role="alert">
+            {errors.email.message}
+          </p>
         ) : null}
       </div>
 
@@ -76,15 +96,13 @@ export function RegisterForm() {
         <label htmlFor="password" className="mb-1.5 block text-sm font-medium">
           Password
         </label>
-        <input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="new-password"
-          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none ring-primary focus:ring-2"
           {...register("password")}
         />
         {errors.password ? (
-          <p className="mt-1 text-xs text-destructive">
+          <p className="mt-1 text-xs text-destructive" role="alert">
             {errors.password.message}
           </p>
         ) : null}
@@ -97,22 +115,24 @@ export function RegisterForm() {
         >
           Confirm password
         </label>
-        <input
+        <PasswordInput
           id="confirm_password"
-          type="password"
           autoComplete="new-password"
-          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none ring-primary focus:ring-2"
           {...register("confirm_password")}
         />
         {errors.confirm_password ? (
-          <p className="mt-1 text-xs text-destructive">
+          <p className="mt-1 text-xs text-destructive" role="alert">
             {errors.confirm_password.message}
           </p>
         ) : null}
       </div>
 
       {registerMutation.isError ? (
-        <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p
+          className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          role="alert"
+          aria-live="polite"
+        >
           {getAuthErrorMessage(registerMutation.error)}
         </p>
       ) : null}
@@ -120,9 +140,17 @@ export function RegisterForm() {
       <button
         type="submit"
         disabled={registerMutation.isPending}
-        className="h-11 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        aria-busy={registerMutation.isPending}
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {registerMutation.isPending ? "Creating account..." : "Create account"}
+        {registerMutation.isPending ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Creating account...
+          </>
+        ) : (
+          "Create account"
+        )}
       </button>
     </form>
   );

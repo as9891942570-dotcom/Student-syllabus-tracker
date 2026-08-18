@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict
 
 
 class QuizOptionPublic(BaseModel):
@@ -89,10 +89,8 @@ class QuizAttemptResponse(BaseModel):
     answered_count: int
     correct_count: int
     incorrect_count: int
-    # Stored 0–100 percentage for compatibility. Display 8/10 via correct_count.
     score: int
     percentage: int
-    passed: bool = False
     xp_earned: int
     total_xp: int
     coins_earned: int = 0
@@ -112,16 +110,6 @@ class QuizAttemptResponse(BaseModel):
     ended_at: Optional[datetime]
     seconds_remaining: int
 
-    @computed_field
-    @property
-    def correct_answers(self) -> int:
-        return self.correct_count
-
-    @computed_field
-    @property
-    def wrong_answers(self) -> int:
-        return self.incorrect_count
-
 
 class QuizHistoryItem(BaseModel):
     id: UUID
@@ -132,11 +120,9 @@ class QuizHistoryItem(BaseModel):
     status: str
     score: int
     percentage: int
-    passed: bool = False
     xp_earned: int
     total_questions: int
     correct_count: int
-    incorrect_count: int = 0
     started_at: datetime
     ended_at: Optional[datetime]
     completed: bool

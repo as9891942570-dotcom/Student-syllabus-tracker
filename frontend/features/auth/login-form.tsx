@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -9,8 +10,17 @@ import {
   getAuthErrorMessage,
   useLoginMutation,
 } from "@/features/auth/hooks";
+import { PasswordInput } from "@/features/auth/password-input";
 import { loginSchema, type LoginFormValues } from "@/features/auth/schemas";
 import { academicLabel, listDeviceAccounts } from "@/stores/device-accounts";
+import { ApiError } from "@/lib/api";
+
+function loginErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.status === 401) {
+    return "Invalid email or password";
+  }
+  return getAuthErrorMessage(error);
+}
 
 export function LoginForm() {
   const loginMutation = useLoginMutation();
@@ -20,15 +30,27 @@ export function LoginForm() {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
 
+  const email = watch("email");
+  const password = watch("password");
   const selected = deviceAccounts.find((account) => account.userId === selectedUserId);
 
+  useEffect(() => {
+    if (loginMutation.isError) {
+      loginMutation.reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clear error when credentials change
+  }, [email, password, selectedUserId]);
+
   const onSubmit = handleSubmit((values) => {
+    if (loginMutation.isPending) return;
+    loginMutation.reset();
     if (selected) {
       loginMutation.mutate({
         user_id: selected.userId,
@@ -56,7 +78,7 @@ export function LoginForm() {
                       selectedUserId === account.userId ? null : account.userId;
                     setSelectedUserId(next);
                     setValue("email", next ? account.email : "", {
-                      shouldValidate: true,
+                      shouldValidate: Boolean(next),
                     });
                   }}
                   className="w-full rounded-lg border border-border px-3 py-2 text-left text-sm hover:border-primary/40"
@@ -79,61 +101,73 @@ export function LoginForm() {
           {academicLabel(selected)}
         </p>
       ) : (
-      <div>
-        <label htmlFor="email" className="mb-1.5 block text-sm font-medium">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none ring-primary focus:ring-2"
-          {...register("email")}
-        />
-        {errors.email ? (
-          <p className="mt-1 text-xs text-destructive">{errors.email.message}</p>
-        ) : null}
-      </div>
+        <div>
+          <label htmlFor="email" className="mb-1.5 block text-sm font-medium">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none ring-primary focus:ring-2"
+            {...register("email")}
+          />
+          {errors.email ? (
+            <p className="mt-1 text-xs text-destructive" role="alert">
+              {errors.email.message}
+            </p>
+          ) : null}
+        </div>
       )}
 
       <div>
-        <div className="mb-1.5 flex items-center justify-between">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
           <label htmlFor="password" className="block text-sm font-medium">
             Password
           </label>
           <Link
             href="/forgot-password"
-            className="text-xs font-medium text-primary hover:underline"
+            className="shrink-0 text-xs font-medium text-primary hover:underline"
           >
             Forgot password?
           </Link>
         </div>
-        <input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="current-password"
-          className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none ring-primary focus:ring-2"
           {...register("password")}
         />
         {errors.password ? (
-          <p className="mt-1 text-xs text-destructive">
+          <p className="mt-1 text-xs text-destructive" role="alert">
             {errors.password.message}
           </p>
         ) : null}
       </div>
 
       {loginMutation.isError ? (
-        <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {getAuthErrorMessage(loginMutation.error)}
+        <p
+          className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          role="alert"
+          aria-live="polite"
+        >
+          {loginErrorMessage(loginMutation.error)}
         </p>
       ) : null}
 
       <button
         type="submit"
         disabled={loginMutation.isPending}
-        className="h-11 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+        aria-busy={loginMutation.isPending}
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {loginMutation.isPending ? "Signing in..." : "Log in"}
+        {loginMutation.isPending ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Signing in...
+          </>
+        ) : (
+          "Log in"
+        )}
       </button>
     </form>
   );

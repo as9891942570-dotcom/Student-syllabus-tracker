@@ -3,7 +3,7 @@
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -15,8 +15,12 @@ class UserRepository(BaseRepository[User]):
         super().__init__(User, session)
 
     async def list_by_email(self, email: str) -> list[User]:
+        # Older accounts may have mixed-case emails; Postgres comparison is case-sensitive.
+        normalized = (email or "").strip().lower()
         result = await self.session.execute(
-            select(User).where(User.email == email.lower()).order_by(User.created_at),
+            select(User)
+            .where(func.lower(User.email) == normalized)
+            .order_by(User.created_at),
         )
         return list(result.scalars().all())
 

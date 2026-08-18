@@ -153,9 +153,6 @@ export default function QuizAttemptPage() {
   const isLast = question.question_number >= question.total_questions;
   const alreadyAnswered =
     question.already_answered || answeredCorrect !== null;
-  const correctOption = question.options.find(
-    (option) => option.id === correctOptionId,
-  );
 
   return (
     <div className="min-h-screen bg-hero-grid px-4 py-6 md:px-6">
@@ -249,25 +246,16 @@ export default function QuizAttemptPage() {
           </ul>
 
           {answeredCorrect !== null ? (
-            <div
+            <p
               className={cn(
                 "mt-4 text-sm font-medium",
-                answeredCorrect
-                  ? "text-emerald-700 dark:text-emerald-300"
-                  : "text-destructive",
+                answeredCorrect ? "text-emerald-700 dark:text-emerald-300" : "text-destructive",
               )}
             >
-              {answeredCorrect ? (
-                <p>Correct!</p>
-              ) : (
-                <p>
-                  Incorrect
-                  {correctOption
-                    ? ` — correct answer: ${correctOption.text}`
-                    : " — the correct answer is highlighted in green."}
-                </p>
-              )}
-            </div>
+              {answeredCorrect
+                ? "Correct!"
+                : "Incorrect — the correct answer is highlighted in green."}
+            </p>
           ) : null}
         </motion.div>
 

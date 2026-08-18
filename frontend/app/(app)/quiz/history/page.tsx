@@ -8,8 +8,6 @@ import {
   getQuizErrorMessage,
   useQuizHistoryQuery,
 } from "@/features/quiz/hooks";
-import { quizHistoryScore } from "@/features/quiz/result-view";
-import { cn } from "@/lib/utils";
 
 export default function QuizHistoryPage() {
   const historyQuery = useQuizHistoryQuery();
@@ -89,35 +87,15 @@ export default function QuizHistoryPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-4 text-sm">
-                  {(() => {
-                    const score = quizHistoryScore(item);
-                    return (
-                      <>
-                        <span>
-                          Score{" "}
-                          <strong>
-                            {score.correct} / {score.total}
-                          </strong>
-                        </span>
-                        <span>
-                          <strong>{score.percentage}%</strong>
-                        </span>
-                        {item.completed ? (
-                          <span
-                            className={cn(
-                              "font-semibold",
-                              score.passed
-                                ? "text-emerald-700 dark:text-emerald-300"
-                                : "text-destructive",
-                            )}
-                          >
-                            {score.passed ? "PASS" : "FAIL"}
-                          </span>
-                        ) : null}
-                        <span className="text-xp">+{item.xp_earned} XP</span>
-                      </>
-                    );
-                  })()}
+                  <span>
+                    Score <strong>{item.score}</strong>
+                  </span>
+                  <span>
+                    <strong>{item.percentage}%</strong>
+                  </span>
+                  <span className="text-xp">
+                    +{item.xp_earned} XP
+                  </span>
                   <span className="text-muted-foreground">
                     {new Date(item.started_at).toLocaleString()}
                   </span>

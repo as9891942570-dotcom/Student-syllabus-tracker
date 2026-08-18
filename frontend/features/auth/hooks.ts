@@ -73,9 +73,23 @@ export function useLogoutMutation() {
 
 export function getAuthErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.status >= 500) {
+      return "Unable to connect to the server. Please try again.";
+    }
     return error.message;
   }
+  if (error instanceof TypeError) {
+    return "Unable to connect to the server. Please try again.";
+  }
   if (error instanceof Error) {
+    const lowered = error.message.toLowerCase();
+    if (
+      lowered.includes("failed to fetch") ||
+      lowered.includes("network") ||
+      lowered.includes("load failed")
+    ) {
+      return "Unable to connect to the server. Please try again.";
+    }
     return error.message;
   }
   return "Something went wrong. Please try again.";

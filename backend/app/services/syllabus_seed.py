@@ -13,11 +13,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.data.cbse_2026_27.catalog import (
-    all_cbse_scopes,
-    subjects_for_scope,
-    validate_catalog,
-)
+from app.data.cbse_2026_27.catalog import all_cbse_scopes, validate_catalog
+from app.data.syllabus.catalog import subjects_for_profile
 from app.data.cbse_2026_27.schema import CURRICULUM_VERSION, SubjectSpec
 from app.models.board import Board
 from app.models.chapter import Chapter
@@ -237,7 +234,11 @@ async def seed_syllabus_for_scope(
     if board is None:
         return []
 
-    blueprint = subjects_for_scope(grade, stream_code if grade >= 11 else None)
+    blueprint = subjects_for_profile(
+        board.code,
+        grade,
+        stream_code if grade >= 11 else None,
+    )
     if not blueprint:
         subjects = await _load_scope_subjects(
             session,

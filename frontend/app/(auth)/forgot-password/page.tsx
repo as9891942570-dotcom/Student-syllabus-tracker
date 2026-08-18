@@ -7,6 +7,7 @@ import { z } from "zod";
 import Link from "next/link";
 
 import { GuestGuard } from "@/features/auth/guest-guard";
+import { AuthBackButton } from "@/features/auth/auth-back-button";
 import { authApi, ApiError } from "@/lib/api";
 
 const schema = z.object({
@@ -43,9 +44,11 @@ export default function ForgotPasswordPage() {
   return (
     <GuestGuard>
       <div className="rounded-2xl border border-border bg-card p-6 shadow-glow">
+        <AuthBackButton fallback="/login" />
         <h1 className="font-display text-2xl font-bold">Forgot password</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Enter your email. Reset email delivery is stubbed in Phase 2.
+          Email-based password reset is not available yet. Submitting this form
+          will not send an email.
         </p>
         <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
           <div>
@@ -79,7 +82,7 @@ export default function ForgotPasswordPage() {
             disabled={isSubmitting}
             className="h-11 w-full rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-70"
           >
-            {isSubmitting ? "Submitting..." : "Send reset link"}
+            {isSubmitting ? "Submitting..." : "Submit"}
           </button>
         </form>
         <p className="mt-4 text-sm text-muted-foreground">

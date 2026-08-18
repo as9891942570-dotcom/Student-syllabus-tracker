@@ -10,7 +10,9 @@ from app.core.security import (
     decode_token,
     hash_password,
     verify_password,
+    verify_password_result,
 )
+from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.services.auth import AuthService
 from app.utils.tokens import hash_token
@@ -21,6 +23,21 @@ def test_password_hash_and_verify() -> None:
     assert hashed != "Secret123!"
     assert verify_password("Secret123!", hashed)
     assert not verify_password("wrong", hashed)
+    assert verify_password("", hashed) is False
+    assert verify_password("Secret123!", "") is False
+    assert verify_password("Secret123!", "not-a-hash") is False
+
+
+def test_native_bcrypt_hash_still_verifies() -> None:
+    import bcrypt
+
+    native = bcrypt.hashpw(b"LegacyPass1!", bcrypt.gensalt(rounds=4, prefix=b"2a")).decode()
+    assert native.startswith("$2a$")
+    assert verify_password("LegacyPass1!", native)
+    assert not verify_password("wrong-pass", native)
+    valid, should_rehash = verify_password_result("LegacyPass1!", native)
+    assert valid is True
+    assert should_rehash is True
 
 
 def test_access_and_refresh_token_claims() -> None:
@@ -163,3 +180,53 @@ async def test_forgot_password_stub(db_session: AsyncSession) -> None:
         ForgotPasswordRequest(email="missing@example.com"),
     )
     assert "password reset" in message.lower()
+    assert "not available" in message.lower()
+
+
+@pytest.mark.asyncio
+async def test_login_mixed_case_legacy_email(db_session: AsyncSession) -> None:
+    service = AuthService(db_session)
+    user = User(
+        email="OldStudent@Example.COM",
+        password_hash=hash_password("Secret123!"),
+        full_name="Legacy Student",
+        is_active=True,
+    )
+    await service.users.create(user)
+
+    tokens = await service.login(
+        LoginRequest(email="oldstudent@example.com", password="Secret123!"),
+    )
+    assert tokens.user.id == user.id
+    assert tokens.access_token
+
+    with pytest.raises(UnauthorizedError) as exc:
+        await service.login(
+            LoginRequest(email="oldstudent@example.com", password="WrongPass1!"),
+        )
+    assert "Invalid email or password" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_login_native_bcrypt_hash_and_upgrade(db_session: AsyncSession) -> None:
+    import bcrypt
+
+    service = AuthService(db_session)
+    native = bcrypt.hashpw(b"Secret123!", bcrypt.gensalt(rounds=4, prefix=b"2a")).decode()
+    user = User(
+        email="legacyhash@example.com",
+        password_hash=native,
+        full_name="Hash Upgrade",
+        is_active=True,
+    )
+    await service.users.create(user)
+
+    tokens = await service.login(
+        LoginRequest(email="legacyhash@example.com", password="Secret123!"),
+    )
+    assert tokens.user.id == user.id
+    refreshed = await service.users.get_by_id(user.id)
+    assert refreshed is not None
+    assert refreshed.password_hash != native
+    assert refreshed.password_hash.startswith("$2b$")
+    assert verify_password("Secret123!", refreshed.password_hash)

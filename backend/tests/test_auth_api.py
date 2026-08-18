@@ -35,6 +35,58 @@ async def test_register_login_me_flow(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_login_mixed_case_email_api(client: AsyncClient, db_session) -> None:
+    from app.core.security import hash_password
+    from app.models.user import User
+
+    user = User(
+        email="LegacyAPI@Example.com",
+        password_hash=hash_password("Secret123!"),
+        full_name="Legacy API",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "legacyapi@example.com", "password": "Secret123!"},
+    )
+    assert login.status_code == 200
+    assert login.json()["user"]["id"] == str(user.id)
+    me = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_login_wrong_password_is_generic(client: AsyncClient) -> None:
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "wrongpass@example.com",
+            "password": "Secret123!",
+            "full_name": "Wrong Pass",
+        },
+    )
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "wrongpass@example.com", "password": "Nope1234!"},
+    )
+    assert login.status_code == 401
+    assert login.json()["detail"] == "Invalid email or password"
+
+    missing = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "nobody@example.com", "password": "Secret123!"},
+    )
+    assert missing.status_code == 401
+    assert missing.json()["detail"] == "Invalid email or password"
+
+
+@pytest.mark.asyncio
 async def test_refresh_and_logout_endpoints(client: AsyncClient) -> None:
     register = await client.post(
         "/api/v1/auth/register",

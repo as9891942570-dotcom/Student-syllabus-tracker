@@ -4,6 +4,10 @@ import Link from "next/link";
 import { Check, Lock, Swords } from "lucide-react";
 
 import { useTopicQuizzesQuery } from "@/features/quiz/hooks";
+import {
+  topicCardStatus,
+  topicQuizLabel,
+} from "@/features/syllabus/topic-card-state";
 import type { Topic } from "@/types/syllabus";
 import { cn } from "@/lib/utils";
 
@@ -20,12 +24,13 @@ function TopicQuizLink({
 }) {
   const quizzes = useTopicQuizzesQuery(locked ? "" : topicId);
   const quiz = quizzes.data?.[0];
+  const status = topicCardStatus({ is_locked: locked, is_completed: isCompleted });
 
   if (locked) {
     return (
       <span className="inline-flex items-center justify-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground opacity-60">
         <Lock className="h-3.5 w-3.5" />
-        Locked
+        {topicQuizLabel("locked")}
       </span>
     );
   }
@@ -33,7 +38,7 @@ function TopicQuizLink({
   if (quizzes.isLoading) {
     return (
       <span className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
-        {isCompleted ? "Retry Quiz..." : "Start Quiz..."}
+        {topicQuizLabel(status)}...
       </span>
     );
   }
@@ -57,7 +62,7 @@ function TopicQuizLink({
       )}
     >
       <Swords className="h-3.5 w-3.5" />
-      {isCompleted ? "Retry Quiz" : "Start Quiz"}
+      {topicQuizLabel(status)}
     </Link>
   );
 }
